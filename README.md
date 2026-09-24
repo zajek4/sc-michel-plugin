@@ -23,7 +23,7 @@ Regulatorni okvir: NN 101/2026 (Odluka o isticanju dodatne cijene, Odluka o obja
 
 ## Instalacija
 
-1. `wp-cpt-sidrene-cijene-1.0.0.zip` → Dodaci → Dodaj novi → Prenesi.
+1. `wp-cpt-sidrene-cijene-1.1.0.zip` → Dodaci → Dodaj novi → Prenesi.
 2. Aktivirajte.
 3. Slijedite čarobnjak za postavljanje (12 koraka, nastavlja se gdje ste stali).
 4. Unesite sidrene cijene (CSV uvoz / ručno / povijesno polje / first listing).
@@ -75,3 +75,8 @@ Radi u Elementor shortcode widgetu, Gutenberg shortcode bloku, klasičnom sadrž
 ## Licenca
 
 GPL-2.0-or-later
+
+## Deinstalacija
+
+- **Podrazumijevano**: `uninstall.php` čuva podatke (opt-in wipe).
+- **Jedan klik u adminu**: Postavke → Održavanje → **E) Obriši SVE i deinstaliraj** — potvrda `OBRIŠI SVE`, DROP tablice, briše opcije/cron/`uploads/cptsc`, deaktivira (i briše datoteke ako `delete_plugins`).

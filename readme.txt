@@ -4,7 +4,7 @@ Tags: sidrena cijena, dodatna cijena, cjenik, csv, cpt
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -34,10 +34,13 @@ Ključne značajke:
 
 == Changelog ==
 
+= 1.1.0 =
+* Produkcijsko stvrdnjavanje: feed-scope preflight, BLOCKED za obvezne sidrene podatke, atomicna objava, fingerprint recovery, WP timezone, keyset cleanup, registered meta API, SSL, footer selector-assist, Uninstalacija „Obriši SVE", queue retry, novi indeksi baze.
+
 = 1.0.0 =
 * Prvo izdanje
 
 == Upgrade Notice ==
 
-= 1.0.0 =
-Prvo izdanje.
+= 1.1.0 =
+Produkcijsko stvrdnjavanje i usklađenost; preporučena nadogradnja.

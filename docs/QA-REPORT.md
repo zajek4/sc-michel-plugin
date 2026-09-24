@@ -1,4 +1,4 @@
-# QA izvještaj — WP CPT Sidrene cijene v1.0.0
+# QA izvještaj — WP CPT Sidrene cijene v1.1.0
 
 Datum: 24.9.2026. · Environment: statička analiza (nema PHP runtimea ni WordPress instancije u sandboxu)
 
@@ -96,3 +96,50 @@ Preporuka: prije produkcije pokrenuti QA matricu iz specifikacije (§71) na stag
 - Listing/loop integracija: shortcode u templateu (namjerno — bez nestabilne auto-detekecije).
 - XML cjenik nije u v1 (CSV prema specifikaciji; arhitektura kanala ga dopušta kasnije).
 - Wizardove poruke u JS dijelu su na hrvatskom (bez vanjskog prijevoda JS stringova).
+
+
+---
+
+## 7. Production hardening 1.1.0 (2026-09-24)
+
+Metode: **Statically verified** (phplint 57/0, node --check JS_OK, grep) i **Code-reviewed**. Funkcionalni WP test nije moguć u sandboxu (nema PHP runtime) — disclosed.
+
+### P0
+| Stavka | Status | Dokaz |
+|---|---|---|
+| Feed-scope preflight (`validation_level < 2`) | Statically verified | Generator L108/L119; Routes L270; Index L198 |
+| BLOCKED maske (anchor/sale/group) | Statically verified | Validator critical_mask |
+| Atomic publish (stage+rename, no copy live) | Statically verified | Generator `.stage-` + rename |
+| Fingerprint recovery | Statically verified | `current_ok` file+hash check |
+| Archive stage+rename | Statically verified | Archive |
+| Archive hooks() fatal | Statically verified | `function hooks` L25 |
+
+### P1
+| Stavka | Status |
+|---|---|
+| WP timezone scheduling | Statically verified |
+| Keyset stale cleanup | Statically verified |
+| Registered meta dual-scope | Statically verified |
+| Frontend footer assist + the_content | Statically verified |
+| SSL default verify | Statically verified |
+| DB keys publication_state/changed_at | Statically verified |
+
+### P2 / BITNO uninstall
+| Stavka | Status |
+|---|---|
+| Obriši SVE + deactivate (+ delete_plugins) | Statically verified; **not runtime-tested** |
+| cptscConfirmUninstall `OBRIŠI SVE` | Statically verified (admin.js) |
+| Queue retry failed | Statically verified |
+| Failed feed HR notice | Statically verified |
+| Diagnostics Archive::reconcile advice | Statically verified |
+
+### QA §91–102 sažetak
+- §91 instalacija: stv / dbDelta idempotent (prethodno testirano strukturno) — Simulated
+- §92–94 anchor/import/mapping pravila — Statically verified (kod)
+- §95–97 feed atomic/fingerprint/retention — Statically verified
+- §98 frontend shortcode+auto — Statically verified; DOM e2e Not testable
+- §99–100 cron/server-cron — Statically verified
+- §101 uninstall opt-in + wipe-all — Statically verified
+- §102 perf keyset/time-budget — Statically verified; fake 50k claim NOT made (§129)
+
+Neisprobiveno uživo: PHP runtime, MySQL, pravi WP admin UI, Elementor DOM.

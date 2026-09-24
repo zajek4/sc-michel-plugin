@@ -48,6 +48,7 @@ Ako nijedan dokaz ne postoji: `MISSING_ANCHOR_PRICE` — plugin **ne izmišlja**
 | B) Ponovno izgradi indeks | NE | NE |
 | C) Ponovno validiraj katalog | NE | NE |
 | D) Potpuni reset (potvrda "RESET") | DA | DA |
+| E) Obriši SVE i deinstaliraj (potvrda "OBRIŠI SVE") — tablice, opcije, datoteke, deaktivacija | DA | DA |
 
 ## Testni način
 

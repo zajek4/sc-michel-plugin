@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.1.0 — 2026-09-24
+
+Produkcijsko stvrdnjavanje (production hardening) i usklađenost.
+
+### Ispravljeno (P0)
+- **Raspon validacije cjenika**: preflight više ne koristi globalne brojače — gleda samo objavljene+kanonske stavke. Draft/private/trash stavke više ne mogu blokirati nevezani feed.
+- **Blokiranje zakonski obveznih podataka**: `MISSING_ANCHOR_PRICE`, `SPECIAL_SALE_NAME_MISSING`, `ANCHOR_GROUP_CONFLICT` sada su BLOCKED (ne REVIEW). Feed streama samo `validation_level < 2` (READY+REVIEW) — blokirani redci nikad ne ulaze u CSV.
+- **Atomicna objava aktualnog CSV-a**: stage u istom direktoriju + `rename` — **nikad** `copy()` preko live datoteke; na neuspjehu prethodna verzija ostaje netaknuta.
+- **Atomicna arhiva**: stage `*.tmp` → rename u finalno regulativno ime; neuspjeh ne bilježi uspješnu verziju.
+- **Fingerprint recovery**: skip samo ako *diskovna* aktualna datoteka postoji i hash odgovara zadnjoj objavi; nestala/korumpirana datoteka se restaurira.
+- **`Archive::hooks()`** — nedostajala metoda koju je `Plugin::boot()` zvao (fatal).
+- **Reconciliacija feeda** (`Archive::reconcile()`): nedostajuća datoteka, fingerprint mismatch, orfan tmp — savjeti u Dijagnostici.
+
+### Ispravljeno (P1)
+- **WordPress timezone**: dnevna objava 07:00 i provjera radnog dana koriste `wp_timezone()`/`current_datetime()` (Europe/Zagreb, DST) umjesto PHP server vremena (`strtotime('today')`, `date('N')`).
+- **Stale index cleanup**: keyset paginacija preko cijelog indeksa (bez `LIMIT 5000`) — skalira na 10k/50k/100k.
+- **Registered meta discovery**: ispravan API `get_registered_meta_keys('post')` + `get_registered_meta_keys('post', $post_type)`.
+- **Frontend automatic**: the_content strategija + footer selector-assist za Elementor/Bricks/ACF template (isti Renderer, potvrđeni selector, fail-silent; isključivo kad je AUTO_VERIFIED).
+- **SSL**: inspector više ne šalje `sslverify => false` (filter `cptsc_inspector_sslverify` samo za staging).
+- **Archive cleanup**: cutoff usklađen s `current_time` satnicom; nikad ne briše aktualni file po kanalu.
+- **HR format datuma**: `Dates::format_hr_date` koristi WP timezone komponente.
+
+### Poboljšano
+- **Uninstalacija E)**: jedan klik „Obriši SVE i deinstaliraj" — DROP tablice, sve opcije, cron, `uploads/cptsc`, deaktivacija (+ brisanje datoteka ako `delete_plugins`).
+- **Queue retry**: „Pokušaj ponovno" za neuspješne stavke u Dijagnostici.
+- **Failed feed UX**: hrvatska poruka da prethodna ispravna verzija ostaje dostupna + grupirane greške.
+- **Indeksi baze**: `publication_state`, `changed_at` na `cptsc_items` (dbDelta, idempotentno).
+- Cron schedule display na hrvatskom; AJAX poruke na hrvatskom.
+
+### Baza
+- `1.0.0` → `1.1.0` (novi indeksi; bez promjena kolona; postojeći podaci ostaju netaknuti).
+
+---
+
 ## 1.0.0 — 2026-09-24
 
 Prvo izdanje.

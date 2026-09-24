@@ -77,3 +77,9 @@ add_filter( 'cptsc_resolve_adapter', function ( $value, $spec, $post_id ) {
 
 `\CPTSC\Dates::format_hr_date( '2026-09-10' )` → `10.9.2026.` (bez vodećih nula).
 Interni/CSV format: `Y-m-d`.
+
+## Actions
+
+| Hook | Kada |
+|---|---|
+| `cptsc_uninstall_everything` | Nakon jednokličnog brisanja svih podataka (Postavke → Održavanje → E) |

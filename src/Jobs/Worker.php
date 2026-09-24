@@ -65,8 +65,9 @@ final class Worker {
 			return;
 		}
 
-		$lock_name = 'job_' . (int) $job_id;
-		if ( ! Lock::acquire( $lock_name, 90, 'shared' ) ) {
+		$lock_name  = 'job_' . (int) $job_id;
+		$lock_token = wp_generate_password( 20, false, false );
+		if ( ! Lock::acquire( $lock_name, 90, $lock_token ) ) {
 			Manager::set_status( $job_id, 'waiting_for_lock' );
 			Manager::schedule_tick( (int) $job_id );
 			return;
@@ -107,8 +108,10 @@ final class Worker {
 			return;
 		}
 
-		// Continuation.
-		Lock::heartbeat( $lock_name, 'shared', 90 );
+		// Continuation: release this worker's lock between batches. Persisted
+		// cursor is the sole continuation mechanism; next tick re-acquires a
+		// fresh unique token (prevents lock-held-across-request deadlocks).
+		Lock::release( $lock_name, $lock_token );
 		Manager::set_status( $job_id, 'running' );
 		Manager::schedule_tick( (int) $job_id );
 	}

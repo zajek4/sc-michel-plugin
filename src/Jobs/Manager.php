@@ -157,7 +157,7 @@ final class Manager {
 		$data  = array(
 			'cursor'       => (int) $cursor,
 			'processed'    => (int) $processed,
-			'heartbeat_at' => current_time( 'mysql' ),
+			'heartbeat_at' => gmdate( 'Y-m-d H:i:s', time() ),
 			'updated_at'   => current_time( 'mysql' ),
 		);
 		if ( null !== $total ) {
@@ -167,7 +167,11 @@ final class Manager {
 			$data['failed'] = (int) $failed;
 		}
 		$wpdb->update( $table, $data, array( 'job_id' => (int) $job_id ) );
-		Lock::heartbeat( 'job_' . (int) $job_id, 'shared', 60 );
+		// Heartbeat only if this worker still owns a unique lock token (no 'shared').
+		$lock = Lock::info( 'job_' . (int) $job_id );
+		if ( is_array( $lock ) && ! empty( $lock['token'] ) ) {
+			Lock::heartbeat( 'job_' . (int) $job_id, (string) $lock['token'], 60 );
+		}
 	}
 
 	/**
@@ -198,6 +202,38 @@ final class Manager {
 	 * @param int $limit Limit.
 	 * @return array[]
 	 */
+	/**
+	 * Aggregate job status counts for diagnostics (§34).
+	 * stalled = active-type statuses without heartbeat in 15 min.
+	 *
+	 * @return array {active:int, stalled:int, failed:int, last_heartbeat:string|null}
+	 */
+	public static function health_counts() {
+		global $wpdb;
+		$table = Database::instance()->table( 'jobs' );
+		$utc   = gmdate( 'Y-m-d H:i:s', time() );
+		$stale = gmdate( 'Y-m-d H:i:s', time() - 900 );
+		$row   = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT
+					SUM( status IN ('queued','running','processing','waiting_for_lock','paused','stalled') ) AS active,
+					SUM( status IN ('queued','running','processing','waiting_for_lock','paused')
+					     AND ( heartbeat_at IS NULL OR heartbeat_at < %s ) ) AS stalled,
+					SUM( status = 'failed' ) AS failed,
+					MAX( heartbeat_at ) AS last_heartbeat
+				 FROM {$table}",
+				$stale
+			),
+			ARRAY_A
+		);
+		return array(
+			'active'         => (int) ( $row['active'] ?? 0 ),
+			'stalled'        => (int) ( $row['stalled'] ?? 0 ),
+			'failed'         => (int) ( $row['failed'] ?? 0 ),
+			'last_heartbeat' => $row['last_heartbeat'] ?? null,
+		);
+	}
+
 	public static function active( $limit = 10 ) {
 		global $wpdb;
 		$table = Database::instance()->table( 'jobs' );
@@ -235,12 +271,13 @@ final class Manager {
 	public static function watchdog( $stale_after = 600 ) {
 		global $wpdb;
 		$table  = Database::instance()->table( 'jobs' );
+		// Single machine-time standard: heartbeat_at and cutoff both UTC (gmdate).
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - (int) $stale_after );
 		$count  = (int) $wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$table} SET status = 'stalled', updated_at = %s
 				 WHERE status = 'running' AND (heartbeat_at IS NULL OR heartbeat_at < %s)",
-				current_time( 'mysql' ),
+				gmdate( 'Y-m-d H:i:s', time() ),
 				$cutoff
 			)
 		);

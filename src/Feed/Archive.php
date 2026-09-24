@@ -205,25 +205,38 @@ final class Archive {
 	/**
 	 * Reconcile DB feed metadata with files on disk (diagnostics / after failures).
 	 *
-	 * @return array {missing_current: string[], fingerprint_mismatch: string[], orphan_tmp: int}
+	 * @return array {missing_current: string[], fingerprint_mismatch: string[], orphan_tmp: int,
+	 *                missing_db_record: string[], missing_file_for_db: string[], db_drift: int}
 	 */
 	public static function reconcile() {
 		global $wpdb;
 		$out    = array(
-			'missing_current'     => array(),
+			'missing_current'      => array(),
 			'fingerprint_mismatch' => array(),
-			'orphan_tmp'          => 0,
+			'orphan_tmp'           => 0,
+			// §28: DB↔file drift buckets.
+			'missing_db_record'    => array(), // current file exists, no published DB row.
+			'missing_file_for_db'  => array(), // DB latest row, current file absent (already in missing_current when latest exists).
+			'db_drift'             => 0,       // health flag from failed feed_versions insert.
 		);
+		$out['db_drift'] = (int) Settings::health( 'feed_db_drift' ) ? 1 : 0;
 		$table  = Database::instance()->table( 'feed_versions' );
 		foreach ( Channel::all( true ) as $ch ) {
 			$ch_id  = (int) $ch['id'];
 			$latest = self::latest_published( $ch_id );
+			$path   = trailingslashit( self::channel_dir( $ch_id ) ) . self::current_filename( $ch_id );
+			$exists = is_readable( $path );
 			if ( ! $latest ) {
+				if ( $exists ) {
+					// File on disk without any published DB record → insert may have failed.
+					$out['missing_db_record'][] = self::current_filename( $ch_id );
+					$out['db_drift']            = 1;
+				}
 				continue;
 			}
-			$path = trailingslashit( self::channel_dir( $ch_id ) ) . self::current_filename( $ch_id );
-			if ( ! is_readable( $path ) ) {
-				$out['missing_current'][] = self::current_filename( $ch_id );
+			if ( ! $exists ) {
+				$out['missing_current'][]   = self::current_filename( $ch_id );
+				$out['missing_file_for_db'][] = self::current_filename( $ch_id );
 				continue;
 			}
 			$fp = hash_file( 'sha256', $path );

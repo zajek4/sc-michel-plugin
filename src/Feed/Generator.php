@@ -211,7 +211,7 @@ final class Generator {
 		// 7) Record published version.
 		global $wpdb;
 		$vt = Database::instance()->table( 'feed_versions' );
-		$wpdb->insert(
+		$inserted = $wpdb->insert(
 			$vt,
 			array(
 				'channel_id'         => $channel_id,
@@ -229,6 +229,16 @@ final class Generator {
 			)
 		);
 
+		if ( false === $inserted ) {
+			// File publish succeeded but DB metadata failed — never claim clean success.
+			Settings::health_set( 'feed_db_drift', 1 );
+			Settings::health_set( 'last_feed_publish', 0 );
+			return new \WP_Error(
+				'cptsc_publish_db',
+				'Cjenik je datotečno objavljen, ali zapis o verziji nije spremljen u bazu. Pokrenite usklađivanje u Dijagnostici.'
+			);
+		}
+
 		// 8) Clear feed_dirty flags (cheap bulk).
 		$wpdb->query( "UPDATE {$table} SET feed_dirty = 0" );
 
@@ -236,6 +246,7 @@ final class Generator {
 		Settings::health_set( 'feed_retry_attempts', 0 ); // Successful publish ends the retry cycle.
 		Settings::health_set( 'last_feed_fingerprint', $fingerprint );
 		Settings::health_set( 'last_feed_filename', $filename );
+		Settings::health_set( 'feed_db_drift', 0 );
 
 		/**
 		 * Fires after a feed version was published.

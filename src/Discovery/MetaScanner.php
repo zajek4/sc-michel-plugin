@@ -76,15 +76,26 @@ class MetaScanner {
 		if ( ! function_exists( 'get_registered_meta_keys' ) ) {
 			return $out;
 		}
-		$scopes = array( 'post', $post_type );
-		foreach ( $scopes as $scope ) {
-			$keys = get_registered_meta_keys( $scope );
+		// Correct WP API: object type is always 'post'; the CPT is the subtype.
+		// Also include keys registered for ALL post types (empty subtype).
+		$scopes = array(
+			array( 'post' ),
+			array( 'post', (string) $post_type ),
+		);
+		$seen   = array();
+		foreach ( $scopes as $scope_args ) {
+			$keys = call_user_func_array( 'get_registered_meta_keys', $scope_args );
+			$scope_label = isset( $scope_args[1] ) ? $scope_args[1] : 'post';
 			foreach ( (array) $keys as $key => $args ) {
+				if ( isset( $seen[ $key ] ) ) {
+					continue;
+				}
+				$seen[ $key ] = true;
 				$out[] = array(
 					'key'   => (string) $key,
 					'label' => isset( $args['label'] ) ? (string) $args['label'] : '',
 					'type'  => isset( $args['type'] ) ? (string) $args['type'] : '',
-					'scope' => $scope,
+					'scope' => (string) $scope_label,
 				);
 			}
 		}

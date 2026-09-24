@@ -247,11 +247,14 @@ final class Admin {
 		self::guard();
 		$post_id = isset( $_POST['post_id'] ) ? (int) $_POST['post_id'] : 0;
 		if ( $post_id <= 0 ) {
-			wp_send_json_error( array( 'message' => 'missing post_id' ) );
+			wp_send_json_error( array( 'message' => __( 'Nedostaje ID objave.', 'wp-cpt-sidrene-cijene' ) ) );
 		}
 		$url     = get_permalink( $post_id );
 		$html    = '';
-		$resp    = wp_remote_get( $url, array( 'timeout' => 15, 'sslverify' => false ) );
+		// Normal secure HTTP — SSL verification stays ON by default.
+		// Filter for local/self-signed staging only; never disable in production code.
+		$sslverify = (bool) apply_filters( 'cptsc_inspector_sslverify', true );
+		$resp    = wp_remote_get( $url, array( 'timeout' => 15, 'sslverify' => $sslverify ) );
 		if ( ! is_wp_error( $resp ) ) {
 			$html = (string) wp_remote_retrieve_body( $resp );
 		}

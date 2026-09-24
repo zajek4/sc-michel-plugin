@@ -48,7 +48,10 @@ final class Dates {
 		if ( ! $time ) {
 			return '';
 		}
-		return (int) date( 'j', $time ) . '.' . (int) date( 'n', $time ) . '.' . date( 'Y', $time ) . '.';
+		// Explicit components in site timezone (no leading zeros): 24.9.2026.
+		$tz   = function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
+		$dt   = ( new \DateTimeImmutable( '@' . $time ) )->setTimezone( $tz );
+		return (int) $dt->format( 'j' ) . '.' . (int) $dt->format( 'n' ) . '.' . $dt->format( 'Y' ) . '.';
 	}
 
 	/**

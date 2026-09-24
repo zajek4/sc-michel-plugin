@@ -44,7 +44,8 @@ final class Cron {
 	public function schedules( $schedules ) {
 		$schedules[ self::MINUTE_HOOK ] = array(
 			'interval' => 60,
-			'display'  => 'Every minute (CPTSC)',
+			/* translators: cron schedule name */
+			'display'  => __( 'Svaka minuta (CPTSC)', 'wp-cpt-sidrene-cijene' ),
 		);
 		return $schedules;
 	}
@@ -85,13 +86,14 @@ final class Cron {
 		if ( wp_next_scheduled( 'cptsc_feed_publish' ) ) {
 			return;
 		}
-		// Next 07:00 local.
-		$now  = time();
-		$next = (int) strtotime( 'today 07:00' );
-		if ( $next <= $now ) {
-			$next = (int) strtotime( 'tomorrow 07:00' );
+		// Next 07:00 in the WordPress site timezone (Europe/Zagreb, DST-safe) — not PHP server TZ.
+		$tz   = function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
+		$now  = new \DateTimeImmutable( 'now', $tz );
+		$next = $now->setTime( 7, 0, 0 );
+		if ( $next->getTimestamp() <= $now->getTimestamp() ) {
+			$next = $next->modify( 'tomorrow' )->setTime( 7, 0, 0 );
 		}
-		wp_schedule_event( $next, 'daily', 'cptsc_feed_publish' );
+		wp_schedule_event( $next->getTimestamp(), 'daily', 'cptsc_feed_publish' );
 	}
 
 	/**
@@ -166,8 +168,12 @@ final class Cron {
 			return;
 		}
 		$item_type = Settings::get( 'item_type', 'product' );
-		if ( 'product' === $item_type && in_array( (int) date( 'N' ), array( 6, 7 ), true ) ) {
-			return; // Traders publish on working days (deadline: workday 08:00).
+		if ( 'product' === $item_type ) {
+			// Workday check in WordPress timezone (Mon–Fri). No holiday calendar claimed.
+			$tz_now = function_exists( 'current_datetime' ) ? current_datetime() : new \DateTimeImmutable( 'now', wp_timezone() );
+			if ( in_array( (int) $tz_now->format( 'N' ), array( 6, 7 ), true ) ) {
+				return; // Traders publish on working days (deadline: workday 08:00).
+			}
 		}
 		if ( self::feed_busy() ) {
 			// Queue-drain → feed: wait for import/reindex to settle; one generation after drain.

@@ -164,6 +164,8 @@ final class Database {
 			KEY barcode (barcode),
 			KEY anchor_group (anchor_group),
 			KEY feed_dirty (feed_dirty),
+			KEY publication_state (publication_state),
+			KEY changed_at (changed_at),
 			KEY name_prefix (name(64))
 		) $charset;";
 

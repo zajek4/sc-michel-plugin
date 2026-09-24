@@ -262,28 +262,46 @@ final class Worker {
 
 	/**
 	 * Remove index rows whose posts no longer exist / belong to unselected types.
+	 * Keyset-paginated over the whole index (10k/50k/100k safe) — no LIMIT 5000 cap.
 	 *
 	 * @param \CPTSC\Mapping\SourceProfile[] $profiles Profiles.
 	 */
 	private function purge_missing( array $profiles ) {
 		global $wpdb;
 		$items = Database::instance()->table( 'items' );
-		$ids   = $wpdb->get_col( "SELECT object_id FROM {$items} LIMIT 5000" );
-		foreach ( (array) $ids as $oid ) {
-			$post = get_post( (int) $oid );
-			if ( ! $post ) {
-				$wpdb->delete( $items, array( 'object_id' => (int) $oid ) );
-				continue;
+		$known_types = array();
+		foreach ( $profiles as $p ) {
+			$known_types[] = $p->post_type;
+		}
+		$known_types = array_values( array_unique( $known_types ) );
+		if ( empty( $known_types ) ) {
+			// No profiles → nothing is "known"; still purge orphaned rows safely.
+			$known_types = array( '__none__' );
+		}
+		$placeholders = implode( ',', array_fill( 0, count( $known_types ), '%s' ) );
+		$last_id      = 0;
+		$batch        = 500;
+		while ( true ) {
+			// Rows whose post is missing OR whose post_type is no longer selected.
+			// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared,WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			$sql = $wpdb->prepare(
+				"SELECT i.id, i.object_id FROM {$items} i
+				 LEFT JOIN {$wpdb->posts} p ON p.ID = i.object_id
+				 WHERE i.id > %d AND ( p.ID IS NULL OR p.post_type NOT IN ( {$placeholders} ) )
+				 ORDER BY i.id ASC LIMIT %d",
+				array_merge( array( $last_id ), $known_types, array( $batch ) )
+			);
+			// phpcs:enable
+			$rows = $wpdb->get_results( $sql, ARRAY_A );
+			if ( empty( $rows ) ) {
+				break;
 			}
-			$known = false;
-			foreach ( $profiles as $p ) {
-				if ( $p->post_type === $post->post_type ) {
-					$known = true;
-					break;
-				}
+			foreach ( $rows as $r ) {
+				$last_id = (int) $r['id'];
+				$wpdb->delete( $items, array( 'id' => $last_id ) );
 			}
-			if ( ! $known ) {
-				$wpdb->delete( $items, array( 'object_id' => (int) $oid ) );
+			if ( count( $rows ) < $batch ) {
+				break;
 			}
 		}
 	}

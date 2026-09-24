@@ -3,7 +3,7 @@
  * Plugin Name:       WP CPT Sidrene cijene
  * Plugin URI:        https://example.com/wp-cpt-sidrene-cijene
  * Description:       Dodatna (sidrena) cijena i digitalni cjenik za WordPress Custom Post Typeove — bez ovisnosti o WooCommerceu. NN 101/2026.
- * Version:           1.1.0
+ * Version:           1.2.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            CPTSC
@@ -17,8 +17,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CPTSC_VERSION', '1.1.0' );
-define( 'CPTSC_DB_VERSION', '1.1.0' );
+define( 'CPTSC_VERSION', '1.2.0' );
+define( 'CPTSC_DB_VERSION', '1.2.0' );
 define( 'CPTSC_PLUGIN_FILE', __FILE__ );
 define( 'CPTSC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CPTSC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );

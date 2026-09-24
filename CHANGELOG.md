@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.2.0
+
+### Compliance & feed (P0)
+- Critical mandatory-data issues (MISSING_CODE/BRAND/AVAILABILITY/BARCODE/UNIT/UNIT_PRICE + ANCHOR_DATE_MISMATCH) now block feed generation via validation level 2; applicability still distinguishes missing / not-applicable / confirmed-absent.
+- Single feed-eligibility rule remains `validation_level < 2` (READY + non-mandatory REVIEW only).
+
+### Queue, jobs, locking
+- `recover_stale()`: stuck `processing` rows recovered with UTC lock comparisons; attempts ≥ 3 → `failed` with Croatian error message.
+- Unique per-worker lock tokens; continuation releases lock between batches (persisted cursor).
+- Watchdog and heartbeats use UTC machine time consistently; progress() only heartbeats owned token.
+- Retry limit 3 for queue items.
+
+### Cron & DST
+- Feed publish uses chained `wp_schedule_single_event` (DST-safe 07:00); legacy daily events converted; workdays Mon–Fri.
+
+### Selector & frontend
+- Selector verification against rendered page (HTTP fetch + DOM) with content fallback; explicit `frontend.strategy` stored (content|selector).
+- Fail-safe unchanged: missing selector → no injection; shortcode `[sidrena_cijena]` full fallback.
+
+### Activation & channels
+- Server-side activation checklist enforcement (nonce+cap insufficient); feed metadata validated (object kind/code/address; no site-domain address).
+- Multi-location UI hidden until real per-channel data.
+
+### Publish & reconciliation
+- `$wpdb->insert` return checked; DB drift flagged (`feed_db_drift`), no clean-success on insert failure.
+- `Archive::reconcile()` extended: file-without-DB, missing file for DB, drift flag.
+
+### Admin UI (Croatian)
+- Queue → Red obrade; Diagnostics: Na čekanju / U obradi / Neuspjelo / Zaglavljeno; Aktivni / Zaglavljeni / Neuspjeli poslovi; Zadnji heartbeat.
+- Structured code + Croatian messages for forbidden/nonce/post_type/rules/job errors.
+
+### Versions
+- Plugin 1.2.0 / DB 1.2.0 (schema unchanged from 1.1.0; version bump for migration consistency).
+
+
 ## 1.1.0 — 2026-09-24
 
 Produkcijsko stvrdnjavanje (production hardening) i usklađenost.

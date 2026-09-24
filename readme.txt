@@ -4,7 +4,7 @@ Tags: sidrena cijena, dodatna cijena, cjenik, csv, cpt
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,20 @@ Ključne značajke:
 3. Slijedite čarobnjak za postavljanje
 
 == Changelog ==
+
+= 1.2.0 =
+* Compliance: kritične obvezne stavke sada blokiraju feed umjesto da se bilježe samo kao upozorenja (MISSING_* + ANCHOR_DATE_MISMATCH).
+* Queue: oporavak zaglavljenih stavki u statusu obrade, pokušaji do 3 pa neuspjelo s hrvatskom porukom.
+* Zaključavanje: UTC strojno vrijeme za red obrade i poslove, jedinstveni token vlasništva po pokretanju, oslobađanje zaključavanja između serija.
+* Watchdog: nadzor i poslova i reda obrade; heartbeat usklađen na UTC.
+* Cron: lanac jednokratnih događaja za sigurnu objavu u 07:00 (DST), radnim danom pon–pet.
+* Selector: provjera protiv stvarno renderirane stranice + spremanje načina prikazivanja (content|selector).
+* Aktivacija: poslovna provjera na poslužitelju — nonce i capability nisu dovoljni.
+* Cjenik: stvarna provjera metapodataka objekta (vrsta, adresa, oznaka); adresa nikada nije domena stranice.
+* Više lokacija: sučelje skriveno dok nema stvarnih podataka o kanalima.
+* Objava: provjera upisa u bazu; nema lažnog uspjeha pri greški baze; usklađivanje DB↔datoteke.
+* Dijagnostika: hrvatski nazivi, status reda obrade i zdravlje poslova.
+
 
 = 1.1.0 =
 * Produkcijsko stvrdnjavanje: feed-scope preflight, BLOCKED za obvezne sidrene podatke, atomicna objava, fingerprint recovery, WP timezone, keyset cleanup, registered meta API, SSL, footer selector-assist, Uninstalacija „Obriši SVE", queue retry, novi indeksi baze.

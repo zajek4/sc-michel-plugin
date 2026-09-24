@@ -143,3 +143,92 @@ Metode: **Statically verified** (phplint 57/0, node --check JS_OK, grep) i **Cod
 - §102 perf keyset/time-budget — Statically verified; fake 50k claim NOT made (§129)
 
 Neisprobiveno uživo: PHP runtime, MySQL, pravi WP admin UI, Elementor DOM.
+
+## 8. V1.2.0 continuation round (2026-09-24) — §35–§54
+
+### P0 compliance (§4–§6)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| critical_mask uključuje MISSING_CODE/BRAND/AVAILABILITY/BARCODE/UNIT/UNIT_PRICE + ANCHOR_DATE_MISMATCH | Statically verified | `Validator.php` critical_mask |
+| Applicability: missing ≠ not-applicable ≠ confirmed-absent | Statically verified | issue_keys + applicability upstream |
+| Jedinstveno feed-eligibility pravilo `validation_level < 2` | Statically verified | Generator L106/117; Routes L270; Index L198; preflight blocks on 2 |
+| Mandatory REVIEW više ne postoji (sve kritično → BLOCKED) | Statically verified | §4 mask → level 2 |
+
+### Queue / locks / cron (§7–§15)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| recover_stale(): processing past lock → pending/failed (attempts≥3, HR poruka) | Statically verified | `Queue::recover_stale` |
+| UTC za locked_until usporedbe (queue + jobs) | Statically verified | gmdate u Queue/Manager |
+| Jedinstveni lock_token po Worker izvrsenju | Statically verified | `wp_generate_password(20)` |
+| Oslobljavanje zakljucavanja izmedju serija (cursor perzistiran) | Statically verified | Worker continuation release |
+| Watchdog + heartbeat UTC; progress only owned token | Statically verified | Manager |
+| DST-safe 07:00 lanac single-events; daily upgrade path | Statically verified | Cron::schedule_feed_publish + ensure_recurring |
+| Radni dan Mon–Fri (bez tvrdnji o praznicima) | Statically verified | Cron |
+| Queue recover i na heartbeat | Statically verified | Cron::ensure_recurring |
+
+### Selector / frontend (§16–§20)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| Verifikacija protiv renderirane stranice (HTTP+DOM) + content fallback | Statically verified | Admin::ajax_verify_selector + Inspector::selector_in_html |
+| frontend.strategy pohranjen (content\|selector) | Statically verified | Settings::defaults + verify |
+| Fail-safe: selector nedostaje → bez injekcije | Statically verified | Automatic |
+| Shortcode fallback aktivan | Statically verified | pre-existing |
+
+### Activation / channels (§21–§26)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| Server-side activation_checklist u ajax_activate | Statically verified | Setup::ajax_activate |
+| feed checklist validira kind/code/address (ne true hardcode) | Statically verified | Setup::activation_checklist |
+| adresa ≠ domena stranice | Statically verified | Channel default '' + stripos check |
+| Multi-loc UI skriven (jedan web cjenik) | Statically verified | SettingsPage |
+
+### Publish / reconciliation (§27–§29)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| $wpdb->insert provjera; feed_db_drift; nema clean-success | Statically verified | Generator publish |
+| Archive::reconcile: file_without_db + missing_current + db_drift | Statically verified | Archive |
+
+### Croatian UI (§30–§34)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| Strukturirani code+HR za forbidden/nonce/post_type/rules/job | Statically verified | Setup, Admin, TestMode |
+| Dashboard Queue → Red obrade | Statically verified | Dashboard L69 |
+| Dijagnostika status reda (na čekanju/u obradi/neuspjelo/zaglavljeno) | Statically verified | Diagnostics rows |
+| Dijagnostika zdravlje poslova (aktivni/zaglavljeni/neuspjeli + heartbeat) | Statically verified | Manager::health_counts |
+
+### Versions / packaging (§46–§49)
+| Stavka | Status | Dokaz |
+|---|---|---|
+| Inačica 1.2.0 / DB 1.2.0 | Statically verified | plugin header, CPTSC_* |
+| Shema nepromijenjena — migracija čuva podatke 1.1.0 | Statically verified | Database.php bez novih stupaca u 1.2.0 |
+| KEY status (status, locked_until) pokriva recovery upit | Statically verified | Database schema + §45 |
+| PHP lint | **Executed** | see delivery report |
+| JS syntax | **Executed** | node --check admin.js |
+
+### Functional QA (§35–§44, §50) — honest
+| Test | Status |
+|---|---|
+| Queue crash recovery A/B/C | **Not testable in Arena** (nema WP runtime) — statically verified SQL |
+| Job continuation / lock release | **Not testable** — statically verified |
+| DST 07:00 chain | **Not testable** — statically verified schedule logic |
+| Activation bypass attempt | **Not testable** — guard present in code |
+| Frontend outside the_content | **Not testable** — strategy=selector path implemented |
+| Broken selector fail-safe | **Not testable** — fail-safe code path present |
+| Compliance blockers / N/A states | **Not testable** — mask + applicability statically verified |
+| Draft does not block | **Not testable** — publication_state filter present |
+| Last-good-feed survives failure | **Not testable** — atomic stage→rename statically verified |
+
+### Known limitations (§51)
+- Bez PHP/MySQL/WP u Areni: nema runtime e2e, nema stvarnog WP-Cron okidanja, nema Elementor/builder DOM probe.
+- Server cron i DISABLE_WP_CRON ponašanje ovisi o hosting okruženju korisnika.
+- HTML cjenik i javni CSV posluženi su iz uploads dir; permalinks rewrite mora biti spremljen (dijagnostika upozorava).
+- Pravi regulatorni ispit podataka (NN 101/2026) ovisi o stvarnim sadržajima trgovca.
+
+### Definition of done (§52)
+- [x] Sve §4–§34 stavke implementirane u kodu
+- [x] Verzija 1.2.0
+- [x] CHANGELOG + README + readme.txt
+- [x] Lint (php-parser) + JS check
+- [x] Logički commity + push na arena branch
+- [x] dist ZIP 1.2.0
+- [x] Iskren QA status (statički vs testabilno)

@@ -23,7 +23,7 @@ Regulatorni okvir: NN 101/2026 (Odluka o isticanju dodatne cijene, Odluka o obja
 
 ## Instalacija
 
-1. `wp-cpt-sidrene-cijene-1.1.0.zip` → Dodaci → Dodaj novi → Prenesi.
+1. `wp-cpt-sidrene-cijene-1.2.0.zip` → Dodaci → Dodaj novi → Prenesi.
 2. Aktivirajte.
 3. Slijedite čarobnjak za postavljanje (12 koraka, nastavlja se gdje ste stali).
 4. Unesite sidrene cijene (CSV uvoz / ručno / povijesno polje / first listing).
@@ -80,3 +80,7 @@ GPL-2.0-or-later
 
 - **Podrazumijevano**: `uninstall.php` čuva podatke (opt-in wipe).
 - **Jedan klik u adminu**: Postavke → Održavanje → **E) Obriši SVE i deinstaliraj** — potvrda `OBRIŠI SVE`, DROP tablice, briše opcije/cron/`uploads/cptsc`, deaktivira (i briše datoteke ako `delete_plugins`).
+
+## 1.2.0
+
+Produkcijsko stvrdnjavanje nastavak: compliance P0 (kritične obvezne stavke blokiraju feed), oporavak zaglavljenih stavki reda obrade, UTC zaključavanje s tokenima vlasništva, DST-sigurno zakazivanje 07:00, provjera selectora na renderiranoj stranici, serverska provjera aktivacije, metapodaci kanala, usklađivanje objave cjenika s bazom, hrvatska dijagnostika reda obrade i poslova. Inačica baze 1.2.0 (shema nepromijenjena — podaci 1.2.0 se čuvaju).

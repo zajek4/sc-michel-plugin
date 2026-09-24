@@ -43,6 +43,38 @@ final class Feed {
 		<div class="wrap cptsc-wrap">
 			<h1><?php esc_html_e( 'Digitalni cjenik', 'wp-cpt-sidrene-cijene' ); ?></h1>
 
+			<?php
+			// Fail-safe UX: show last failed generation clearly (previous feed stays live).
+			$last_failed = null;
+			if ( $default ) {
+				// Latest row of any status (Archive::versions returns published only).
+				global $wpdb;
+				$vt       = \CPTSC\Database::instance()->table( 'feed_versions' );
+				$last_any = $wpdb->get_row(
+					$wpdb->prepare( "SELECT * FROM {$vt} WHERE channel_id = %d ORDER BY id DESC LIMIT 1", (int) $default['id'] ),
+					ARRAY_A
+				);
+				if ( $last_any && 'failed' === ( $last_any['status'] ?? '' ) ) {
+					$last_failed = $last_any;
+				}
+			}
+			?>
+			<?php if ( $last_failed ) : ?>
+				<div class="notice notice-error"><p>
+					<?php esc_html_e( 'Novi cjenik nije objavljen jer provjera podataka nije prošla. Prethodna ispravna verzija ostala je dostupna.', 'wp-cpt-sidrene-cijene' ); ?>
+					<?php
+					$errs = json_decode( (string) ( $last_failed['validation_errors'] ?? '' ), true );
+					if ( is_array( $errs ) && $errs ) {
+						echo '<ul>';
+						foreach ( array_slice( $errs, 0, 8 ) as $e ) {
+							echo '<li>' . esc_html( (string) $e ) . '</li>';
+						}
+						echo '</ul>';
+					}
+					?>
+				</p></div>
+			<?php endif; ?>
+
 			<div class="cptsc-cards">
 				<div class="cptsc-card">
 					<span class="cptsc-card-label"><?php esc_html_e( 'Objava cjenika', 'wp-cpt-sidrene-cijene' ); ?></span>

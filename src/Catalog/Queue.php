@@ -285,6 +285,26 @@ final class Queue {
 	}
 
 	/**
+	 * Requeue all failed rows (admin retry operation).
+	 *
+	 * @return int Rows reset.
+	 */
+	public static function retry_failed() {
+		global $wpdb;
+		$table = Database::instance()->table( 'queue' );
+		$n = (int) $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$table} SET status = 'pending', attempts = 0, locked_until = NULL, updated_at = %s WHERE status = 'failed'",
+				current_time( 'mysql' )
+			)
+		);
+		if ( $n > 0 ) {
+			self::schedule_tick();
+		}
+		return $n;
+	}
+
+	/**
 	 * Process one batch inside a time budget. Returns remaining pending count.
 	 *
 	 * @return int

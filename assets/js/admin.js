@@ -396,6 +396,18 @@
 		return true;
 	};
 
+	window.cptscConfirmUninstall = function (e) {
+		var form = e.target;
+		var answer = window.prompt('TRAJNO BRIŠE SVE podatke i datoteke plugina te ga deaktivira. Unesite točno: OBRIŠI SVE');
+		if (answer !== 'OBRIŠI SVE') { return false; }
+		var input = document.createElement('input');
+		input.type = 'hidden';
+		input.name = 'cptsc_confirm';
+		input.value = answer;
+		form.appendChild(input);
+		return true;
+	};
+
 	function escapeHtml(s) {
 		return String(s == null ? '' : s)
 			.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

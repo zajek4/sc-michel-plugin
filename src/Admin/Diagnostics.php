@@ -73,6 +73,19 @@ final class Diagnostics {
 				</ul></div>
 			<?php endif; ?>
 
+			<?php if ( ItemQueue::failed_count() > 0 ) : ?>
+				<form method="post" style="margin:8px 0">
+					<?php wp_nonce_field( 'cptsc_queue_retry' ); ?>
+					<button class="button" name="cptsc_retry_failed" value="1" type="submit"><?php esc_html_e( 'Pokušaj ponovno za neuspješne stavke', 'wp-cpt-sidrene-cijene' ); ?></button>
+				</form>
+				<?php
+				if ( isset( $_POST['cptsc_retry_failed'], $_POST['_wpnonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ), 'cptsc_queue_retry' ) && current_user_can( 'manage_options' ) ) {
+					$n = ItemQueue::retry_failed();
+					echo '<div class="notice notice-success"><p>' . esc_html( sprintf( /* translators: %d */ __( 'Ponovno je na čekanje stavljeno stavki: %d.', 'wp-cpt-sidrene-cijene' ), $n ) ) . '</p></div>';
+				}
+				?>
+			<?php endif; ?>
+
 			<h2><?php esc_html_e( 'Aktivne obrade', 'wp-cpt-sidrene-cijene' ); ?></h2>
 			<?php
 			$jobs = \CPTSC\Jobs\Manager::active( 20 );
@@ -161,8 +174,31 @@ final class Diagnostics {
 		if ( ItemQueue::failed_count() > 0 ) {
 			$advice[] = sprintf(
 				/* translators: %d: failed queue rows */
-				__( 'Queue ima %d neuspješnih redaka — provjerite odgovaraju li izvorne ključeve potvrđenom mapiranju.', 'wp-cpt-sidrene-cijene' ),
+				__( 'Queue ima %d neuspješnih redaka — provjerite odgovaraju li izvorne ključeve potvrđenom mapiranju ili pokrenite ponovni pokušaj.', 'wp-cpt-sidrene-cijene' ),
 				ItemQueue::failed_count()
+			);
+		}
+		// Feed reconciliation (DB vs disk) — lightweight, diagnostics-only.
+		$reconcile = \CPTSC\Feed\Archive::reconcile();
+		if ( ! empty( $reconcile['missing_current'] ) ) {
+			$advice[] = sprintf(
+				/* translators: %s: filenames */
+				__( 'Nedostaju aktualne CSV datoteke: %s — pokrenite objavu cjenika.', 'wp-cpt-sidrene-cijene' ),
+				implode( ', ', $reconcile['missing_current'] )
+			);
+		}
+		if ( ! empty( $reconcile['fingerprint_mismatch'] ) ) {
+			$advice[] = sprintf(
+				/* translators: %s: filenames */
+				__( 'Fingerprint aktualnih datoteka ne odgovara zadnjoj objavljenoj verziji: %s — pokrenite objavu radi usklađivanja.', 'wp-cpt-sidrene-cijene' ),
+				implode( ', ', $reconcile['fingerprint_mismatch'] )
+			);
+		}
+		if ( ! empty( $reconcile['orphan_tmp'] ) ) {
+			$advice[] = sprintf(
+				/* translators: %d: count */
+				_n( 'Pronađena je %d napuštena privremena datoteka — očistit će se automatski.', 'Pronađeno je %d napuštenih privremenih datoteka — očistit će se automatski.', (int) $reconcile['orphan_tmp'], 'wp-cpt-sidrene-cijene' ),
+				(int) $reconcile['orphan_tmp']
 			);
 		}
 

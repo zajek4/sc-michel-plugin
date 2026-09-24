@@ -152,6 +152,12 @@ final class SettingsPage {
 					<button class="button button-secondary cptsc-danger-btn" type="submit"><?php esc_html_e( 'D) Potpuni reset plugina', 'wp-cpt-sidrene-cijene' ); ?></button>
 					<p class="description"><?php esc_html_e( 'D) briše indeks, sidrene podatke, uvoze, audit i cjenikove. Traži potvrdu.', 'wp-cpt-sidrene-cijene' ); ?></p>
 				</form>
+				<form method="post" style="display:inline" onsubmit="return cptscConfirmUninstall(event);">
+					<?php wp_nonce_field( 'cptsc_uninstall_all' ); ?>
+					<input type="hidden" name="maint" value="uninstall_all">
+					<button class="button button-danger cptsc-danger-btn" type="submit"><?php esc_html_e( 'E) Obriši SVE i deinstaliraj', 'wp-cpt-sidrene-cijene' ); ?></button>
+					<p class="description"><?php esc_html_e( 'E) trajno briše sve tablice, opcije i datoteke plugina, zatim ga deaktivira (i briše datoteke ako je moguće). Nepovratno.', 'wp-cpt-sidrene-cijene' ); ?></p>
+				</form>
 			</div>
 
 			<div class="cptsc-panel">
@@ -249,6 +255,22 @@ final class SettingsPage {
 			}
 			$this->flash( __( 'Potvrda nije ispravna — ništa nije obrisano.', 'wp-cpt-sidrene-cijene' ), 'error' );
 		}
+
+		// E) Wipe everything + deactivate (+ delete plugin files when permitted).
+		if ( isset( $_POST['maint'], $_POST['cptsc_confirm'] ) && 'uninstall_all' === sanitize_key( wp_unslash( $_POST['maint'] ) ) && wp_verify_nonce( $nonce, 'cptsc_uninstall_all' ) ) {
+			if ( 'OBRIŠI SVE' === mb_strtoupper( trim( sanitize_text_field( wp_unslash( $_POST['cptsc_confirm'] ) ) ) ) ) {
+				self::uninstall_everything();
+				// Deactivate, then try to delete plugin files (requires delete_plugins).
+				deactivate_plugins( CPTSC_PLUGIN_BASENAME );
+				if ( function_exists( 'delete_plugins' ) && current_user_can( 'delete_plugins' ) ) {
+					delete_plugins( CPTSC_PLUGIN_BASENAME );
+				}
+				// Options already wiped — no flash possible. Land on plugins list.
+				wp_safe_redirect( admin_url( 'plugins.php' ) );
+				exit;
+			}
+			$this->flash( __( 'Potvrda nije ispravna — ništa nije obrisano.', 'wp-cpt-sidrene-cijene' ), 'error' );
+		}
 	}
 
 	/**
@@ -284,6 +306,67 @@ final class SettingsPage {
 		\CPTSC\Jobs\Cron::clear_scheduled();
 		Settings::install_defaults();
 		do_action( 'cptsc_full_reset' );
+	}
+
+	/**
+	 * E) Uninstall-everything: drop tables, delete ALL plugin options/locks,
+	 * clear cron, delete uploads/cptsc — everything uninstall.php would do.
+	 * Plugin files are deleted separately via delete_plugins() by the caller.
+	 */
+	public static function uninstall_everything() {
+		global $wpdb;
+
+		// 1) Drop all plugin tables.
+		$tables = array(
+			$wpdb->prefix . 'cptsc_sources',
+			$wpdb->prefix . 'cptsc_term_rules',
+			$wpdb->prefix . 'cptsc_items',
+			$wpdb->prefix . 'cptsc_queue',
+			$wpdb->prefix . 'cptsc_jobs',
+			$wpdb->prefix . 'cptsc_audit',
+			$wpdb->prefix . 'cptsc_channels',
+			$wpdb->prefix . 'cptsc_feed_versions',
+		);
+		foreach ( $tables as $table ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- fixed table names.
+			$wpdb->query( "DROP TABLE IF EXISTS {$table}" );
+		}
+
+		// 2) All cptsc options (settings, discovery, health, token, db version, locks).
+		$wpdb->query(
+			"DELETE FROM {$wpdb->options}
+			 WHERE option_name IN ('cptsc_settings','cptsc_discovery','cptsc_health','cptsc_cron_token','cptsc_db_version','cptsc_import_staged','cptsc_import_job','cptsc_flash')
+			    OR option_name LIKE '\\_transient_cptsc_lock_%'
+			    OR option_name LIKE '\\_transient_timeout_cptsc_lock_%'
+			    OR option_name LIKE 'cptsc_lock_%'"
+		);
+		// Transients stored as options.
+		$lock_options = $wpdb->get_col(
+			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '\\_transient_cptsc%' OR option_name LIKE 'cptsc_%'"
+		);
+		foreach ( (array) $lock_options as $name ) {
+			delete_option( $name );
+		}
+
+		// 3) Scheduled events.
+		\CPTSC\Jobs\Cron::clear_scheduled();
+		wp_clear_scheduled_hook( 'cptsc_queue_tick' );
+		wp_clear_scheduled_hook( 'cptsc_heartbeat' );
+		wp_clear_scheduled_hook( 'cptsc_feed_publish' );
+		wp_clear_scheduled_hook( 'cptsc_feed_retry' );
+		wp_clear_scheduled_hook( 'cptsc_job_tick' );
+
+		// 4) Feed/archive/tmp files under uploads/cptsc only.
+		$uploads = wp_upload_dir();
+		$base    = trailingslashit( $uploads['basedir'] ) . 'cptsc';
+		if ( is_dir( $base ) ) {
+			self::rrmdir( $base );
+		}
+
+		// 5) Flush rewrites so /cjenik/ routes disappear.
+		flush_rewrite_rules( false );
+
+		do_action( 'cptsc_uninstall_everything' );
 	}
 
 	/**

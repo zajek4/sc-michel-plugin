@@ -66,7 +66,7 @@ final class Dashboard {
 					<strong><?php echo esc_html( sprintf( /* translators: %d days */ __( 'Aktivna (%d dana)', 'wp-cpt-sidrene-cijene' ), Archive::retention_days() ) ); ?></strong>
 				</div>
 				<div class="cptsc-card">
-					<span class="cptsc-card-label"><?php esc_html_e( 'Queue', 'wp-cpt-sidrene-cijene' ); ?></span>
+					<span class="cptsc-card-label"><?php esc_html_e( 'Red obrade', 'wp-cpt-sidrene-cijene' ); ?></span>
 					<strong class="<?php echo ( $failed > 0 ) ? 'cptsc-err' : 'cptsc-ok'; ?>">
 						<?php
 						if ( $failed > 0 ) {

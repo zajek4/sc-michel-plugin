@@ -86,7 +86,11 @@ final class TestMode {
 	private function evaluate_post( SourceProfile $profile, $post_id ) {
 		$post = get_post( $post_id );
 		if ( ! $post ) {
-			return array( 'post_id' => $post_id, 'error' => 'not found' );
+			return array(
+				'post_id' => $post_id,
+				'error'   => 'post_not_found',
+				'message' => __( 'Objekt nije pronađen.', 'wp-cpt-sidrene-cijene' ),
+			);
 		}
 
 		$invalid  = array();

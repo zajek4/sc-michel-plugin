@@ -160,6 +160,10 @@ final class Diagnostics {
 		$feed_file     = $latest ? trailingslashit( Archive::channel_dir( (int) $latest['channel_id'] ) ) . Archive::current_filename( (int) $latest['channel_id'] ) : '';
 		$feed_exists   = $feed_file && file_exists( $feed_file );
 
+		// §33/§34: queue + job health snapshots (UTC machine time) — before advice uses them.
+		$q_counts = \CPTSC\Catalog\Queue::status_counts();
+		$j_counts = \CPTSC\Jobs\Manager::health_counts();
+
 		// Actionable advice (heartbeat-gated DISABLE_WP_CRON check per reference §44).
 		$advice = array();
 		if ( $health['wp_cron_disabled'] && empty( $health['last_server_cron'] ) ) {
@@ -171,10 +175,17 @@ final class Diagnostics {
 		if ( $latest && ! $feed_exists ) {
 			$advice[] = __( 'Posljednja zabilježena objava postoji u bazi, ali aktualna CSV datoteka nije pronađena na disku — pokrenite ponovnu objavu.', 'wp-cpt-sidrene-cijene' );
 		}
+		if ( ! empty( $q_counts['stuck'] ) && $q_counts['stuck'] > 0 ) {
+			$advice[] = sprintf(
+				/* translators: %d: stuck queue rows */
+				__( 'Red obrade ima %d zaglavljenih stavki u obradi — automatski oporavak pokrenut će se pri sljedećem otkucaju cron-a.', 'wp-cpt-sidrene-cijene' ),
+				(int) $q_counts['stuck']
+			);
+		}
 		if ( ItemQueue::failed_count() > 0 ) {
 			$advice[] = sprintf(
 				/* translators: %d: failed queue rows */
-				__( 'Queue ima %d neuspješnih redaka — provjerite odgovaraju li izvorne ključeve potvrđenom mapiranju ili pokrenite ponovni pokušaj.', 'wp-cpt-sidrene-cijene' ),
+				__( 'Red obrade ima %d neuspješnih redaka — provjerite odgovaraju li izvorne ključeve potvrđenom mapiranju ili pokrenite ponovni pokušaj.', 'wp-cpt-sidrene-cijene' ),
 				ItemQueue::failed_count()
 			);
 		}
@@ -211,10 +222,16 @@ final class Diagnostics {
 			__( 'Odabrani CPT-ovi', 'wp-cpt-sidrene-cijene' ) => implode( ', ', (array) Settings::get( 'post_types', array() ) ),
 			__( 'Vrsta sadržaja', 'wp-cpt-sidrene-cijene' )   => Settings::get( 'item_type', '—' ),
 			__( 'Redci indeksa', 'wp-cpt-sidrene-cijene' )    => number_format_i18n( $counts['total'] ),
-			__( 'Queue na čekanju', 'wp-cpt-sidrene-cijene' ) => number_format_i18n( ItemQueue::pending_count() ),
-			__( 'Queue neuspješni', 'wp-cpt-sidrene-cijene' ) => number_format_i18n( ItemQueue::failed_count() ),
-			__( 'Zadnji worker', 'wp-cpt-sidrene-cijene' )    => $health['last_worker'] ? date( 'd.m.Y. H:i', $health['last_worker'] ) : '—',
-			__( 'Heartbeat', 'wp-cpt-sidrene-cijene' )        => $health['last_heartbeat'] ? date( 'd.m.Y. H:i', $health['last_heartbeat'] ) : '—',
+			__( 'Red obrade: na čekanju', 'wp-cpt-sidrene-cijene' )  => number_format_i18n( $q_counts['pending'] ),
+			__( 'Red obrade: u obradi', 'wp-cpt-sidrene-cijene' )    => number_format_i18n( $q_counts['processing'] ),
+			__( 'Red obrade: neuspjelo', 'wp-cpt-sidrene-cijene' )   => number_format_i18n( $q_counts['failed'] ),
+			__( 'Red obrade: zaglavljeno', 'wp-cpt-sidrene-cijene' ) => number_format_i18n( $q_counts['stuck'] ),
+			__( 'Aktivni poslovi', 'wp-cpt-sidrene-cijene' )         => number_format_i18n( $j_counts['active'] ),
+			__( 'Zaglavljeni poslovi', 'wp-cpt-sidrene-cijene' )     => number_format_i18n( $j_counts['stalled'] ),
+			__( 'Neuspjeli poslovi', 'wp-cpt-sidrene-cijene' )       => number_format_i18n( $j_counts['failed'] ),
+			__( 'Zadnji heartbeat', 'wp-cpt-sidrene-cijene' )        => $j_counts['last_heartbeat'] ? preg_replace( '/T.*/', '', $j_counts['last_heartbeat'] ) : ( $health['last_heartbeat'] ? date( 'd.m.Y. H:i', $health['last_heartbeat'] ) : '—' ),
+			__( 'Zadnji worker', 'wp-cpt-sidrene-cijene' )           => $health['last_worker'] ? date( 'd.m.Y. H:i', $health['last_worker'] ) : '—',
+			__( 'Heartbeat sustava', 'wp-cpt-sidrene-cijene' )       => $health['last_heartbeat'] ? date( 'd.m.Y. H:i', $health['last_heartbeat'] ) : '—',
 			__( 'Server cron heartbeat', 'wp-cpt-sidrene-cijene' ) => $health['last_server_cron'] ? date( 'd.m.Y. H:i', $health['last_server_cron'] ) : __( 'nije zabilježen', 'wp-cpt-sidrene-cijene' ),
 			'DISABLE_WP_CRON'                                 => ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) ? 'da' : 'ne',
 			__( 'Zadnji cjenik', 'wp-cpt-sidrene-cijene' )    => $latest ? $latest['filename'] . ' (' . $latest['row_count'] . ')' : '—',
@@ -249,7 +266,7 @@ final class Diagnostics {
 			__( 'Feed retry pokušaji (max 3)', 'wp-cpt-sidrene-cijene' ) => (string) (int) ( $health['feed_retry_attempts'] ?? 0 ),
 			__( 'Zadnja server cron izvedba', 'wp-cpt-sidrene-cijene' ) => $health['last_server_cron'] ? date( 'd.m. H:i', $health['last_server_cron'] ) : __( 'nije zabilježen', 'wp-cpt-sidrene-cijene' ),
 			__( 'Zadnja automatska objava', 'wp-cpt-sidrene-cijene' )   => $health['last_feed_publish'] ? date( 'd.m. H:i', $health['last_feed_publish'] ) : '—',
-			__( 'Queue-drain zaštita', 'wp-cpt-sidrene-cijene' )         => \CPTSC\Jobs\Cron::feed_busy() ? __( 'aktivna (katalog se obrađuje — objava pričeka)', 'wp-cpt-sidrene-cijene' ) : __( 'mirno stanje', 'wp-cpt-sidrene-cijene' ),
+			__( 'Zaštita od preklapanja obrade i objave', 'wp-cpt-sidrene-cijene' )         => \CPTSC\Jobs\Cron::feed_busy() ? __( 'aktivna (katalog se obrađuje — objava pričeka)', 'wp-cpt-sidrene-cijene' ) : __( 'mirno stanje', 'wp-cpt-sidrene-cijene' ),
 		);
 
 		$lines = array();

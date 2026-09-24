@@ -118,11 +118,20 @@ final class Validator {
 
 		$publication = $row['publication_state'] ?? 'publish';
 		// Legally mandatory for a published digital price list → always BLOCKED when missing.
-		// Optional/applicability fields (code, brand, barcode, unit, availability) stay REVIEW.
+		// Includes all CSV fields required by NN 101/2026 Objašnjenja + ANCHOR_DATE_MISMATCH
+		// (anchor integrity is never a soft review for published items).
+		// Remaining issue bits stay REVIEW (warnings must not substitute for missing mandatory data).
 		$critical_mask = Issues::MISSING_NAME
 			| Issues::MISSING_CURRENT_PRICE
 			| Issues::SOURCE_VALUE_INVALID
 			| Issues::MISSING_ANCHOR_PRICE
+			| Issues::MISSING_CODE
+			| Issues::MISSING_BRAND
+			| Issues::MISSING_AVAILABILITY
+			| Issues::MISSING_BARCODE
+			| Issues::MISSING_UNIT
+			| Issues::MISSING_UNIT_PRICE
+			| Issues::ANCHOR_DATE_MISMATCH
 			| Issues::SPECIAL_SALE_NAME_MISSING
 			| Issues::ANCHOR_GROUP_CONFLICT;
 		$critical = ( $mask & $critical_mask ) > 0;

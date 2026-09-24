@@ -1,0 +1,19 @@
+/* WP CPT Sidrene cijene — frontend (minimal class API, inherits theme) */
+.cptsc-anchor-price {
+	display: inline-block;
+	margin: 0.15em 0;
+	font: inherit;
+	color: inherit;
+	line-height: inherit;
+}
+
+.cptsc-anchor-price .cptsc-anchor-label {
+	margin-inline-end: 0.35em;
+}
+
+.cptsc-anchor-price .cptsc-anchor-value {
+	font-weight: inherit;
+}
+
+/* Optional theme overrides example:
+   .cptsc-anchor-price { font-size: 0.92em; opacity: .9; } */

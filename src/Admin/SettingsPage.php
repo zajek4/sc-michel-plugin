@@ -66,6 +66,11 @@ final class SettingsPage {
 				<p><button class="button button-primary" type="submit" name="cptsc_save_general" value="1"><?php esc_html_e( 'Spremi', 'wp-cpt-sidrene-cijene' ); ?></button></p>
 			</form>
 
+			<?php
+			// §25: multi-location editing UI only when real per-channel data exists.
+			$cptsc_channel_count = count( \CPTSC\Feed\Channel::all() );
+			?>
+			<?php if ( $cptsc_channel_count > 1 ) : ?>
 			<form method="post" class="cptsc-panel">
 				<?php wp_nonce_field( 'cptsc_channels' ); ?>
 				<h2 id="channels"><?php esc_html_e( 'Lokacije (kanali)', 'wp-cpt-sidrene-cijene' ); ?></h2>
@@ -125,6 +130,12 @@ final class SettingsPage {
 				</table>
 				<p><button class="button button-primary" type="submit" name="cptsc_save_channels" value="1"><?php esc_html_e( 'Spremi lokacije', 'wp-cpt-sidrene-cijene' ); ?></button></p>
 			</form>
+			<?php else : ?>
+			<div class="cptsc-panel">
+				<h2 id="channels"><?php esc_html_e( 'Lokacije (kanali)', 'wp-cpt-sidrene-cijene' ); ?></h2>
+				<p class="description"><?php esc_html_e( 'Uređivanje više lokacija prikazuje se samo kada postoji stvarna višekanalna mapa. Trenutno je aktivan jedan web cjenik. Prije feed objave unesite stvarnu adresu objekta u postavkama kanala.', 'wp-cpt-sidrene-cijene' ); ?></p>
+			</div>
+			<?php endif; ?>
 
 			<form method="post" class="cptsc-panel">
 				<?php wp_nonce_field( 'cptsc_uninstall_opt' ); ?>

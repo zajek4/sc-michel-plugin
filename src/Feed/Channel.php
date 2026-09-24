@@ -91,7 +91,9 @@ final class Channel {
 				'name'           => get_bloginfo( 'name' ),
 				'object_kind'    => 'service' === $item_type ? 'usluzni_objekt' : 'prodavaonica',
 				'object_code'    => 'service' === $item_type ? 'U-01' : 'P-01',
-				'address'        => wp_parse_url( home_url( '/' ), PHP_URL_HOST ) ? wp_parse_url( home_url( '/' ), PHP_URL_HOST ) : '',
+				// Never use the site domain as business address (§23). Admin must
+				// enter the real address in Settings before feed filename is valid.
+				'address'        => '',
 				'storage_sequence' => 0,
 				'enabled'        => 1,
 				'is_default'     => 1,

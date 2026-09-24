@@ -686,6 +686,7 @@ final class Setup {
 						'index'     => __( 'Inicijalni indeks izgrađen', 'wp-cpt-sidrene-cijene' ),
 						'preflight' => __( 'Provjera prije aktivacije prihvaćena', 'wp-cpt-sidrene-cijene' ),
 						'feed'      => __( 'Postavke digitalnog cjenika dovršene', 'wp-cpt-sidrene-cijene' ),
+						'frontend'  => __( 'Način prikazivanja na stranici', 'wp-cpt-sidrene-cijene' ),
 					);
 					echo esc_html( isset( $labels[ $key ] ) ? $labels[ $key ] : $key );
 					?>
@@ -706,8 +707,21 @@ final class Setup {
 	 * @return array key => bool
 	 */
 	public function activation_checklist() {
-		$profiles = SourceProfile::confirmed();
-		$counts   = \CPTSC\Catalog\Index::counts();
+		$profiles  = SourceProfile::confirmed();
+		$counts    = \CPTSC\Catalog\Index::counts();
+		$ch        = Channel::default_channel();
+		// §24: validate real channel/feed metadata — never hardcode feed = true.
+		$addr      = $ch ? trim( (string) $ch['address'] ) : '';
+		$kind      = $ch ? trim( (string) $ch['object_kind'] ) : '';
+		$code      = $ch ? trim( (string) $ch['object_code'] ) : '';
+		$site_host = (string) wp_parse_url( home_url( '/' ), PHP_URL_HOST );
+		$addr_ok   = '' !== $addr && '' !== $site_host && false === stripos( $addr, $site_host );
+		$feed_ok   = (bool) $ch && '' !== $kind && '' !== $code && $addr_ok;
+		// Frontend mode must be configured: disabled (shortcode fallback) or verified selector.
+		$fe_state  = (string) Settings::get( 'frontend.state', 'auto_disabled' );
+		$fe_sel    = (string) Settings::get( 'frontend.selector', '' );
+		$fe_ok     = 'auto_disabled' === $fe_state
+			|| ( 'auto_verified' === $fe_state && '' !== $fe_sel && \CPTSC\Frontend\Inspector::is_safe_selector( $fe_sel ) );
 		return array(
 			'sources'   => ! empty( $profiles ),
 			'price'     => ! empty( $profiles ) && null !== $profiles[0]->field( 'current_price' ),
@@ -715,7 +729,8 @@ final class Setup {
 			// Pre-activation an empty index is normal (initial full reindex runs on activation).
 			'index'     => $counts['total'] > 0 || 'ACTIVE' !== (string) Settings::get( 'setup_state', '' ),
 			'preflight' => (bool) Settings::get( 'preflight_ack', false ) || $counts['total'] <= 0,
-			'feed'      => true, // Optional feature — default single channel exists.
+			'feed'      => $feed_ok,
+			'frontend'  => $fe_ok,
 		);
 	}
 
@@ -726,11 +741,11 @@ final class Setup {
 	 */
 	public function ajax_save_step() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+			wp_send_json_error( array( 'code' => 'forbidden', 'message' => __( 'Nemate dopuštenje za ovu radnju.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, 'cptsc_admin' ) ) {
-			wp_send_json_error( array( 'message' => 'nonce' ), 403 );
+			wp_send_json_error( array( 'code' => 'invalid_nonce', 'message' => __( 'Sigurnosna provjera nije uspjela. Osvježite stranicu i pokušajte ponovno.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$step = isset( $_POST['step'] ) ? (int) $_POST['step'] : 0;
 		$post = wp_unslash( $_POST ); // phpcs:ignore
@@ -1013,11 +1028,11 @@ final class Setup {
 	 */
 	public function ajax_back() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+			wp_send_json_error( array( 'code' => 'forbidden', 'message' => __( 'Nemate dopuštenje za ovu radnju.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, 'cptsc_admin' ) ) {
-			wp_send_json_error( array( 'message' => 'nonce' ), 403 );
+			wp_send_json_error( array( 'code' => 'invalid_nonce', 'message' => __( 'Sigurnosna provjera nije uspjela. Osvježite stranicu i pokušajte ponovno.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$step = isset( $_POST['step'] ) ? (int) $_POST['step'] : 1;
 		$prev = max( 1, $step - 1 );
@@ -1031,11 +1046,11 @@ final class Setup {
 	public function ajax_next() {
 		// Step save happens first via cptsc_wizard_save_step; this returns next HTML.
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+			wp_send_json_error( array( 'code' => 'forbidden', 'message' => __( 'Nemate dopuštenje za ovu radnju.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, 'cptsc_admin' ) ) {
-			wp_send_json_error( array( 'message' => 'nonce' ), 403 );
+			wp_send_json_error( array( 'code' => 'invalid_nonce', 'message' => __( 'Sigurnosna provjera nije uspjela. Osvježite stranicu i pokušajte ponovno.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$step = isset( $_POST['step'] ) ? (int) $_POST['step'] : 1;
 		ob_start();
@@ -1053,15 +1068,27 @@ final class Setup {
 	 */
 	public function ajax_activate() {
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_send_json_error( array( 'message' => 'forbidden' ), 403 );
+			wp_send_json_error( array( 'code' => 'forbidden', 'message' => __( 'Nemate dopuštenje za ovu radnju.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, 'cptsc_admin' ) ) {
-			wp_send_json_error( array( 'message' => 'nonce' ), 403 );
+			wp_send_json_error( array( 'code' => 'invalid_nonce', 'message' => __( 'Sigurnosna provjera nije uspjela. Osvježite stranicu i pokušajte ponovno.', 'wp-cpt-sidrene-cijene' ) ), 403 );
 		}
 		$profiles = SourceProfile::confirmed();
 		if ( empty( $profiles ) ) {
 			wp_send_json_error( array( 'message' => __( 'Mapiranje nije potvrđeno.', 'wp-cpt-sidrene-cijene' ) ) );
+		}
+		// Server-side business validation — nonce + capability alone are not enough (§21/§22).
+		$ready = $this->activation_checklist();
+		if ( in_array( false, $ready, true ) ) {
+			wp_send_json_error(
+				array(
+					'code'          => 'activation_incomplete',
+					'message'       => __( 'Početno postavljanje još nije moguće završiti. Pregledajte stavke koje zahtijevaju provjeru.', 'wp-cpt-sidrene-cijene' ),
+					'failed_checks' => array_keys( array_filter( $ready, static function ( $v ) { return ! $v; } ) ),
+				),
+				400
+			);
 		}
 		Channel::ensure_default();
 		Settings::update(

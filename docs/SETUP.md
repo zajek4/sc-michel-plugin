@@ -26,7 +26,7 @@ Nakon aktivacije: `setup_state = ACTIVE`, pokreće se početni indeks, zakazana 
 - **Pregled** — status sustava, brojke, zadnji cjenik, queue.
 - **Proizvodi/Usluge** — tablični katalog (filtr + pretraga + serversko straničenje).
 - **Digitalni cjenik** — uključi/isključi objavu, "Objavi odmah", kanali.
-- **Uvoz** — CSV sidrenih podataka (`object_id, sifra, sidrena_cijena, sidreni_datum, sidrena_grupa`).
+- **Uvoz** — CSV sidrenih podataka (`object_id, sifra, sidrena_cijena, sidreni_datum, sidrena_grupa`). Prazna `sidrena_cijena` = preskoči redak (ništa se ne mijenja). Za namjerno brisanje sidrenog podatka u stupac cijene upišite `OBRISANO` (uz potvrdu prepisivanja ako je podatak već potvrđen).
 - **Arhiva** — objavljene verzije + ručno čišćenje (retention ≥30 dana se poštuje).
 - **Postavke** — opće, lokacije (kanali), deinstalacija, održavanje A–D, testni način.
 - **Dijagnostika** — verzije, scheduler, heartbeat, poslovi, server cron naredba, kopiranje izvještaja.

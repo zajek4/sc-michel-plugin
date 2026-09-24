@@ -102,4 +102,28 @@ final class Lock {
 		$cur = get_option( self::OPTION_PREFIX . sanitize_key( $name ) );
 		return is_array( $cur ) ? $cur : null;
 	}
+
+	/**
+	 * Periodic reconciliation: remove expired/stale lock options so a fatal
+	 * in one worker never leaves the system stuck (heartbeat calls this).
+	 *
+	 * @return int Removed count.
+	 */
+	public static function sweep() {
+		global $wpdb;
+		$like  = $wpdb->esc_like( self::OPTION_PREFIX ) . '%';
+		$names = $wpdb->get_col(
+			$wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $like ) // phpcs:ignore WordPress.DB.PreparedSQL
+		);
+		$removed = 0;
+		$grace   = 300; // Extra seconds after expiry before sweeping.
+		foreach ( (array) $names as $name ) {
+			$payload = get_option( $name );
+			if ( ! is_array( $payload ) || empty( $payload['expires'] ) || (int) $payload['expires'] + $grace < time() ) {
+				delete_option( $name );
+				$removed++;
+			}
+		}
+		return $removed;
+	}
 }

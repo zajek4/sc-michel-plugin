@@ -110,10 +110,8 @@ final class Routes {
 		$default = Channel::default_channel();
 		if ( $channel_id <= 0 ) {
 			$channel_id = $default ? (int) $default['id'] : 0;
-			$filename   = 'aktualni.csv';
-		} else {
-			$filename = 'aktualni-' . $channel_id . '.csv';
 		}
+		$filename = Archive::current_filename( $channel_id );
 		$dir  = Archive::channel_dir( $channel_id );
 		$path = trailingslashit( $dir ) . $filename;
 		$this->stream( $path, $filename );

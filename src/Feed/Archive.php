@@ -152,13 +152,19 @@ final class Archive {
 	}
 
 	/**
-	 * Stable "current" filename on disk.
+	 * Stable "current" filename on disk. The default channel always uses
+	 * aktualni.csv (its DB id may be > 0) — matches Generator publish logic.
 	 *
 	 * @param int $channel_id Channel.
 	 * @return string
 	 */
 	public static function current_filename( $channel_id = 0 ) {
-		return $channel_id > 0 ? 'aktualni-' . (int) $channel_id . '.csv' : 'aktualni.csv';
+		$default    = Channel::default_channel();
+		$default_id = $default ? (int) $default['id'] : 0;
+		if ( ! $channel_id || (int) $channel_id === $default_id ) {
+			return 'aktualni.csv';
+		}
+		return 'aktualni-' . (int) $channel_id . '.csv';
 	}
 
 	/**

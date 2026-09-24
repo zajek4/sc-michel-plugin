@@ -181,8 +181,7 @@ final class Generator {
 		}
 
 		// 6) Atomic current publish: rename temp → aktualni file (same filesystem via uploads).
-		$is_default = Channel::default_channel() && (int) Channel::default_channel()['id'] === $channel_id;
-		$current    = trailingslashit( Archive::channel_dir( $channel_id ) ) . ( $is_default ? 'aktualni.csv' : 'aktualni-' . $channel_id . '.csv' );
+		$current = trailingslashit( Archive::channel_dir( $channel_id ) ) . Archive::current_filename( $channel_id );
 		$renamed = @rename( $tmp, $current ); // phpcs:ignore
 		if ( ! $renamed ) {
 			// Fallback: copy + unlink (still only replaces when complete).
@@ -218,6 +217,7 @@ final class Generator {
 		$wpdb->query( "UPDATE {$table} SET feed_dirty = 0" );
 
 		Settings::health_set( 'last_feed_publish', time() );
+		Settings::health_set( 'feed_retry_attempts', 0 ); // Successful publish ends the retry cycle.
 		Settings::health_set( 'last_feed_fingerprint', $fingerprint );
 		Settings::health_set( 'last_feed_filename', $filename );
 

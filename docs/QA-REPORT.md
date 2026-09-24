@@ -23,6 +23,9 @@ Datum: 24.9.2026. · Environment: statička analiza (nema PHP runtimea ni WordPr
 - Queue: request buffer + `ON DUPLICATE KEY UPDATE` dedup, unique `(source_id, object_id)`, batch + time budget + lock, pokušaji do 3 pa `failed`.
 - Jobs: cursor/heartbeat/total/processed/failed, lock po poslu, continuation scheduling, watchdog → `stalled` + UX poruka „Obrada je prekinuta. Možete sigurno nastaviti."
 - Feed: temp → fputcsv stream → preflight (header, kolone, blocked count) → SHA-256 → arhivska kopija (regulativni naziv) → atomic rename; greška = current ostaje netaknut; identičan fingerprint = skip.
+- Queue-drain → feed: `Cron::feed_busy()` (pending queue + aktivne CSV_IMPORT/FULL_REINDEX/DISCOVERY/REVALIDATE/TERM_RULE_REBUILD obrade) odgađa dnevnu objavu na `cptsc_feed_retry` (max 3 × 10 min); FEED_GENERATION unutar batcha vraća `defer` → paused + retry; uspješna objava poništava ciklus.
+- CSV import: prazna cijena → status `skipped` (preskočeno, bez promjene i bez greške); `OBRISANO` marker → brisanje sidrenog podataka samo uz overwrite za verified + audit `ANCHOR_CHANGED`; obrana u `apply_anchor()` nikad ne piše praznu cijenu bez markera.
+- Locks: `Lock::sweep()` na satnom heartbeatu uklanja istekle lock opcije (grace 300 s).
 - Arhiva: retention max(30, postavka), nikad ne briše aktualni, javni serve samo za registrirane `published` filenameove s whitelist regexom (bez `..`, `/`, `\`).
 - Frontend: jedan Renderer za shortcode i automatic; labela „Cijena na 10.9.2026.:"; datum bez vodećih nula; selector verified-only; fail-silent; bez duplikata (marker provjera).
 - Cron: WP-Cron (min interval + daily 07:00 feed) + server-cron s 48-znakovnim tokenom i `hash_equals`; DISABLE_WP_CRON prikazan u dijagnostici.
@@ -64,6 +67,10 @@ Datum: 24.9.2026. · Environment: statička analiza (nema PHP runtimea ni WordPr
 - publish → draft → publish → first listing se ne mijenja.
 - Posebni oblik prodaje `true` bez naziva → SPECIAL_SALE_NAME_MISSING.
 - Stale lock → takeover nakon TTL; stalled job → watchdog + „Nastavi".
+- Feed generiranje nasred uvoza/reindexa → defer (pauza + bounded retry), current CSV ostaje.
+- Prazna cijena u CSV uvozu → preskočeno (nikad interpretirano kao brisanje); brisanje samo `OBRISANO` markerom.
+- DISABLE_WP_CRON uključen bez server crona → savjet u Dijagnostici (ne tiha greška).
+- Default kanal s id ≠ 0 → svugdje `aktualni.csv` (`current_filename` usklađen s Generator/Routes).
 - Retention ispod 30 → suzdržan na 30.
 - Red s mismatch broja kolona u feedu → preflight FAIL, current ostaje.
 - Brisanje posta → redak se uklanja (`deleted_post` + purge u reindexu).

@@ -89,6 +89,17 @@ final class Worker {
 		}
 
 		$job = Manager::get( $job_id );
+		if ( 'defer' === $done ) {
+			// Queue-drain guard: catalog still busy — pause and retry later.
+			Manager::set_status(
+				$job_id,
+				'paused',
+				array( 'last_error' => __( 'Odgođeno — čekam dovršetak obrade kataloga.', 'wp-cpt-sidrene-cijene' ) )
+			);
+			Lock::release( $lock_name );
+			Cron::schedule_feed_retry();
+			return;
+		}
 		if ( $done ) {
 			Manager::set_status( $job_id, 'completed' );
 			Lock::release( $lock_name );
@@ -335,11 +346,17 @@ final class Worker {
 	 * @return bool
 	 */
 	private function batch_feed( array $job, array $payload, $deadline ) {
+		// Queue-drain → feed: never generate mid-import/mid-reindex (fresh settled index only).
+		if ( Cron::feed_busy() ) {
+			return 'defer';
+		}
 		$generator = new Generator();
 		$channel_ids = ! empty( $payload['channel_ids'] ) ? (array) $payload['channel_ids'] : array();
 		$force     = ! empty( $payload['force'] );
 		$result    = $generator->generate_for_channels( $channel_ids, $force, array( __CLASS__, 'feed_progress' ), $job['job_id'], $deadline );
 		if ( is_wp_error( $result ) ) {
+			// Fail-safe: current feed stays; schedule bounded retry then fail this attempt.
+			Cron::schedule_feed_retry();
 			throw new \RuntimeException( $result->get_error_message() );
 		}
 		return true;
@@ -393,6 +410,7 @@ final class Worker {
 	public function run_heartbeat() {
 		Settings::health_set( 'last_heartbeat', time() );
 		Manager::watchdog( 600 );
+		Lock::sweep(); // Reconciliation: clear expired locks left by fatal/timeouts.
 		if ( ! wp_next_scheduled( 'cptsc_heartbeat' ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'cptsc_heartbeat' );
 		}

@@ -22,6 +22,10 @@ final class Groups {
 	 * @return array key => {label, reference_date, system}
 	 */
 	public static function system() {
+		$fmcg = array(
+			'reference_date' => '2025-05-02',
+			'system'         => true,
+		);
 		return array(
 			'legacy_fmcg'   => array(
 				'label'          => __( 'FMCG (ranije obuhvaćene kategorije)', 'wp-cpt-sidrene-cijene' ),
@@ -29,6 +33,14 @@ final class Groups {
 				'system'         => true,
 				'description'    => __( 'Hrana, piće, kozmetika, sredstva za čišćenje, toaletne potrepštine i proizvodi za kućanstvo.', 'wp-cpt-sidrene-cijene' ),
 			),
+			// Named NN 101/2026 FMCG categories (same reference date as legacy_fmcg —
+			// offered for finer per-term mapping; never auto-assigned).
+			'fmcg_hrana'    => array_merge( $fmcg, array( 'label' => __( 'Hrana', 'wp-cpt-sidrene-cijene' ) ) ),
+			'fmcg_pice'     => array_merge( $fmcg, array( 'label' => __( 'Piće', 'wp-cpt-sidrene-cijene' ) ) ),
+			'fmcg_kozmetika'=> array_merge( $fmcg, array( 'label' => __( 'Kozmetika', 'wp-cpt-sidrene-cijene' ) ) ),
+			'fmcg_ciscenje' => array_merge( $fmcg, array( 'label' => __( 'Sredstva za čišćenje', 'wp-cpt-sidrene-cijene' ) ) ),
+			'fmcg_toaleta'  => array_merge( $fmcg, array( 'label' => __( 'Toaletne potrepštine', 'wp-cpt-sidrene-cijene' ) ) ),
+			'fmcg_kucanstvo'=> array_merge( $fmcg, array( 'label' => __( 'Proizvodi za kućanstvo', 'wp-cpt-sidrene-cijene' ) ) ),
 			'general_2026'  => array(
 				'label'          => __( 'Svi ostali proizvodi i usluge', 'wp-cpt-sidrene-cijene' ),
 				'reference_date' => '2026-09-10',

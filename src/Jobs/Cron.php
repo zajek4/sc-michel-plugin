@@ -29,6 +29,7 @@ final class Cron {
 	public function hooks() {
 		add_filter( 'cron_schedules', array( $this, 'schedules' ) );
 		add_action( 'cptsc_feed_publish', array( $this, 'maybe_publish_feed' ) );
+		add_action( 'cptsc_feed_retry', array( $this, 'retry_publish_feed' ) );
 		add_action( 'init', array( $this, 'ensure_recurring' ) );
 		// Public server-cron endpoint (query var routed in Feed\Routes).
 		add_action( 'template_redirect', array( $this, 'maybe_server_cron' ), 0 );
@@ -100,13 +101,67 @@ final class Cron {
 		wp_clear_scheduled_hook( 'cptsc_queue_tick' );
 		wp_clear_scheduled_hook( 'cptsc_heartbeat' );
 		wp_clear_scheduled_hook( 'cptsc_feed_publish' );
+		wp_clear_scheduled_hook( 'cptsc_feed_retry' );
 		wp_clear_scheduled_hook( 'cptsc_job_tick' );
 	}
 
 	/**
-	 * Automatic feed publication (product: weekdays; service: daily when dirty).
+	 * Is catalog work in flight? Queue-drain guard: feed must be generated
+	 * from a settled index — never mid-import/mid-reindex.
+	 *
+	 * @return bool
+	 */
+	public static function feed_busy() {
+		if ( \CPTSC\Catalog\Queue::pending_count() > 0 ) {
+			return true;
+		}
+		global $wpdb;
+		$jobs = \CPTSC\Database::instance()->table( 'jobs' );
+		$n = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$jobs}
+			 WHERE type IN ('CSV_IMPORT','FULL_REINDEX','DISCOVERY','REVALIDATE','TERM_RULE_REBUILD')
+			   AND status IN ('queued','running','waiting_for_lock','paused')"
+		);
+		return $n > 0;
+	}
+
+	/**
+	 * Schedule a bounded one-shot retry (max 3 per cycle; cycle resets on
+	 * the daily slot and on successful publish).
+	 */
+	public static function schedule_feed_retry() {
+		if ( wp_next_scheduled( 'cptsc_feed_retry' ) ) {
+			return;
+		}
+		$health   = Settings::health();
+		$attempts = isset( $health['feed_retry_attempts'] ) ? (int) $health['feed_retry_attempts'] : 0;
+		if ( $attempts >= 3 ) {
+			return; // Leave it for the next daily slot / manual publish.
+		}
+		Settings::health_set( 'feed_retry_attempts', $attempts + 1 );
+		wp_schedule_single_event( time() + 10 * MINUTE_IN_SECONDS, 'cptsc_feed_retry' );
+	}
+
+	/**
+	 * Automatic feed publication entry (daily). Resets the retry cycle, then
+	 * runs the guarded attempt.
 	 */
 	public function maybe_publish_feed() {
+		Settings::health_set( 'feed_retry_attempts', 0 );
+		$this->try_publish_feed();
+	}
+
+	/**
+	 * Retry attempt (deferred/failed publish) — does not reset the cycle.
+	 */
+	public function retry_publish_feed() {
+		$this->try_publish_feed();
+	}
+
+	/**
+	 * Shared guarded publish: drain the queue first, then enqueue generation.
+	 */
+	private function try_publish_feed() {
 		if ( ! Settings::get( 'feed.enabled', false ) || ! Settings::get( 'feed.auto_publish', true ) ) {
 			return;
 		}
@@ -114,9 +169,10 @@ final class Cron {
 		if ( 'product' === $item_type && in_array( (int) date( 'N' ), array( 6, 7 ), true ) ) {
 			return; // Traders publish on working days (deadline: workday 08:00).
 		}
-		if ( ! \CPTSC\Catalog\Queue::pending_count() ) {
-			// Wait until the queue drained so the index is fresh.
-			// (If pending is 0 we publish current index.)
+		if ( self::feed_busy() ) {
+			// Queue-drain → feed: wait for import/reindex to settle; one generation after drain.
+			self::schedule_feed_retry();
+			return;
 		}
 		\CPTSC\Jobs\Manager::enqueue( 'FEED_GENERATION', array( 'force' => false ), true );
 	}
@@ -175,14 +231,16 @@ final class Cron {
 	public static function health() {
 		$health = Settings::health();
 		return array(
-			'wp_cron_disabled'  => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
-			'queue_event'       => wp_next_scheduled( 'cptsc_queue_tick' ),
-			'heartbeat_event'   => wp_next_scheduled( 'cptsc_heartbeat' ),
-			'feed_event'        => wp_next_scheduled( 'cptsc_feed_publish' ),
-			'last_worker'       => isset( $health['last_worker'] ) ? (int) $health['last_worker'] : 0,
-			'last_heartbeat'    => isset( $health['last_heartbeat'] ) ? (int) $health['last_heartbeat'] : 0,
-			'last_server_cron'  => isset( $health['last_server_cron'] ) ? (int) $health['last_server_cron'] : 0,
-			'last_feed_publish' => isset( $health['last_feed_publish'] ) ? (int) $health['last_feed_publish'] : 0,
+			'wp_cron_disabled'     => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,
+			'queue_event'          => wp_next_scheduled( 'cptsc_queue_tick' ),
+			'heartbeat_event'      => wp_next_scheduled( 'cptsc_heartbeat' ),
+			'feed_event'           => wp_next_scheduled( 'cptsc_feed_publish' ),
+			'feed_retry_event'     => wp_next_scheduled( 'cptsc_feed_retry' ),
+			'feed_retry_attempts'  => isset( $health['feed_retry_attempts'] ) ? (int) $health['feed_retry_attempts'] : 0,
+			'last_worker'          => isset( $health['last_worker'] ) ? (int) $health['last_worker'] : 0,
+			'last_heartbeat'       => isset( $health['last_heartbeat'] ) ? (int) $health['last_heartbeat'] : 0,
+			'last_server_cron'     => isset( $health['last_server_cron'] ) ? (int) $health['last_server_cron'] : 0,
+			'last_feed_publish'    => isset( $health['last_feed_publish'] ) ? (int) $health['last_feed_publish'] : 0,
 		);
 	}
 }

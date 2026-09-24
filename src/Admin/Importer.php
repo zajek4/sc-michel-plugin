@@ -55,6 +55,7 @@ final class Importer {
 				<p class="description">
 					<?php esc_html_e( 'CSV stupci (redoslijed nije bitan, header mora postojati):', 'wp-cpt-sidrene-cijene' ); ?>
 					<br><code>object_id, sifra, sidrena_cijena, sidreni_datum, sidrena_grupa</code>
+					<br><?php esc_html_e( 'Prazna sidrena cijena = preskoči redak (ništa se ne mijenja, ništa se ne briše). Za namjerno brisanje sidrenog podatka upišite OBRISANO u stupac cijene (uz potvrdu prepisivanja za potvrđene podatke).', 'wp-cpt-sidrene-cijene' ); ?>
 				</p>
 				<form method="post" enctype="multipart/form-data">
 					<?php wp_nonce_field( 'cptsc_import_upload' ); ?>
@@ -77,8 +78,10 @@ final class Importer {
 							<tr><th><?php esc_html_e( 'Podudarno (object ID)', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['matched_id'] ) ); ?></td></tr>
 							<tr><th><?php esc_html_e( 'Podudarno (šifra)', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['matched_code'] ) ); ?></td></tr>
 							<tr><th><?php esc_html_e( 'Nije pronađeno', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['unmatched'] ) ); ?></td></tr>
-							<tr><th><?php esc_html_e( 'Sukobi (postojeći potvrđeni podatak)', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['conflicts'] ) ); ?></td></tr>
-							<tr><th><?php esc_html_e( 'Neispravni redci', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['invalid'] ) ); ?></td></tr>
+						<tr><th><?php esc_html_e( 'Sukobi (postojeći potvrđeni podatak)', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['conflicts'] ) ); ?></td></tr>
+						<tr><th><?php esc_html_e( 'Za eksplicitno brisanje (OBRISANO)', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['to_clear'] ) ); ?></td></tr>
+						<tr><th><?php esc_html_e( 'Preskočeno (prazna cijena — bez izmjene)', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['skipped'] ) ); ?></td></tr>
+						<tr><th><?php esc_html_e( 'Neispravni redci', 'wp-cpt-sidrene-cijene' ); ?></th><td><?php echo esc_html( number_format_i18n( $preview['invalid'] ) ); ?></td></tr>
 						</tbody>
 					</table>
 
@@ -256,7 +259,7 @@ final class Importer {
 			return new \WP_Error( 'cptsc_cols', __( 'Nije pronađen stupac sidrene cijene (sidrena_cijena / anchor_price).', 'wp-cpt-sidrene-cijene' ) );
 		}
 
-		$total = $matched_id = $matched_code = $unmatched = $conflicts = $invalid = 0;
+		$total = $matched_id = $matched_code = $unmatched = $conflicts = $invalid = $skipped = $to_clear = 0;
 		$sample = array();
 		$code_index = $this->unique_code_index();
 
@@ -267,28 +270,34 @@ final class Importer {
 			$total++;
 			$row = $this->parse_line( $line, $map );
 			$status = $this->classify( $row, $code_index );
-			switch ( $status['status'] ) {
-				case 'matched_id':
-					$matched_id++;
-					break;
-				case 'matched_code':
-					$matched_code++;
-					break;
-				case 'unmatched':
-					$unmatched++;
-					break;
-				case 'conflict':
-					$conflicts++;
-					break;
-				default:
-					$invalid++;
+			if ( 'skipped' === $status['status'] ) {
+				$skipped++;
+			} elseif ( ! empty( $row['clear'] ) && in_array( $status['status'], array( 'matched_id', 'matched_code' ), true ) ) {
+				$to_clear++;
+			} else {
+				switch ( $status['status'] ) {
+					case 'matched_id':
+						$matched_id++;
+						break;
+					case 'matched_code':
+						$matched_code++;
+						break;
+					case 'unmatched':
+						$unmatched++;
+						break;
+					case 'conflict':
+						$conflicts++;
+						break;
+					default:
+						$invalid++;
+				}
 			}
 			if ( count( $sample ) < 10 ) {
 				$sample[] = array(
-					'object_id' => $row['object_id'],
-					'code'      => $row['code'],
-					'price'     => $row['price'],
-					'date'      => $row['date'],
+					'object_id' => (string) $row['object_id'],
+					'code'      => (string) $row['code'],
+					'price'     => ! empty( $row['clear'] ) ? 'OBRISANO' : (string) $row['price'],
+					'date'      => (string) $row['date'],
 					'status'    => $status['label'],
 				);
 			}
@@ -301,6 +310,8 @@ final class Importer {
 			'matched_code' => $matched_code,
 			'unmatched'    => $unmatched,
 			'conflicts'    => $conflicts,
+			'skipped'      => $skipped,
+			'to_clear'     => $to_clear,
 			'invalid'      => $invalid,
 			'sample'       => $sample,
 		);
@@ -432,6 +443,11 @@ final class Importer {
 			}
 			$row   = $this->parse_line( $line, $map );
 			$status = $this->classify( $row, $code_index );
+			if ( 'skipped' === $status['status'] ) {
+				// Blank price: row handled as explicit no-op — never deletes, never fails.
+				$rows_done++;
+				continue;
+			}
 			if ( in_array( $status['status'], array( 'matched_id', 'matched_code' ), true ) && ! empty( $status['item_id'] ) ) {
 				$this->apply_anchor( (int) $status['item_id'], $row, $overwrite, $user );
 				$processed++;
@@ -464,6 +480,43 @@ final class Importer {
 		$items = Database::instance()->table( 'items' );
 		$item  = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$items} WHERE id = %d", $item_id ), ARRAY_A );
 		if ( ! $item ) {
+			return;
+		}
+		// Defense in depth: blank price without the explicit marker never writes.
+		if ( empty( $row['clear'] ) && ( null === $row['price'] || '' === $row['price'] ) ) {
+			return;
+		}
+		// Explicit OBRISANO marker: deliberate anchor removal (audited).
+		if ( ! empty( $row['clear'] ) ) {
+			$had_anchor = null !== $item['anchor_price'] || null !== $item['anchor_date'] || ! empty( $item['anchor_verified'] );
+			if ( ! $had_anchor ) {
+				return; // Nothing to clear.
+			}
+			$already_verified = ! empty( $item['anchor_verified'] ) && null !== $item['anchor_price'];
+			if ( $already_verified && ! $overwrite ) {
+				return; // Verified anchor requires overwrite permission to clear.
+			}
+			$wpdb->update(
+				$items,
+				array(
+					'anchor_price'    => null,
+					'anchor_date'     => null,
+					'anchor_verified' => 0,
+					'anchor_source'   => 'csv_import',
+					'changed_at'      => current_time( 'mysql' ),
+					'feed_dirty'      => 1,
+				),
+				array( 'id' => $item_id )
+			);
+			Audit::instance()->log(
+				(int) $item['object_id'],
+				'ANCHOR_CHANGED',
+				wp_json_encode( array( $item['anchor_price'], $item['anchor_date'] ) ),
+				wp_json_encode( array( null, null ) ),
+				'csv_import',
+				$user
+			);
+			do_action( 'cptsc_csv_import_applied', (int) $item['object_id'], $row );
 			return;
 		}
 		$already_verified = ! empty( $item['anchor_verified'] ) && null !== $item['anchor_price'];
@@ -556,7 +609,9 @@ final class Importer {
 		$object_id = $get( 'object_id' );
 		$price_raw = $get( 'price' );
 		$date_raw  = $get( 'date' );
-		$price     = Money::to_string( $price_raw );
+		// Explicit deletion marker (deliberate intent) — distinct from blank.
+		$is_clear  = null !== $price_raw && in_array( strtoupper( trim( $price_raw ) ), array( 'OBRISANO', 'OBRISI', 'CLEAR' ), true );
+		$price     = $is_clear ? null : Money::to_string( $price_raw );
 		$date      = null;
 		if ( $date_raw ) {
 			if ( \CPTSC\Dates::is_iso_date( $date_raw ) ) {
@@ -571,6 +626,7 @@ final class Importer {
 			'price'     => $price,
 			'date'      => $date,
 			'group'     => $get( 'group' ) ? sanitize_key( (string) $get( 'group' ) ) : null,
+			'clear'     => $is_clear,
 		);
 	}
 
@@ -602,7 +658,13 @@ final class Importer {
 	 * @return array {status, label, item_id}
 	 */
 	private function classify( array $row, array $code_index ) {
-		if ( null === $row['price'] || null === $row['date'] ) {
+		$is_clear = ! empty( $row['clear'] );
+		// Blank price (no marker): explicit no-op — never a delete, never a failure.
+		if ( ! $is_clear && null === $row['price'] ) {
+			return array( 'status' => 'skipped', 'label' => __( 'preskočeno — prazna cijena', 'wp-cpt-sidrene-cijene' ), 'item_id' => 0 );
+		}
+		// Price present but date missing (clear rows don't need a date).
+		if ( ! $is_clear && null === $row['date'] ) {
 			return array( 'status' => 'invalid', 'label' => __( 'neispravan redak', 'wp-cpt-sidrene-cijene' ), 'item_id' => 0 );
 		}
 		global $wpdb;
@@ -615,7 +677,14 @@ final class Importer {
 			);
 			if ( $item ) {
 				$verified = ! empty( $item['anchor_verified'] ) && null !== $item['anchor_price'];
-				$differs  = ! Money::eq( (string) $item['anchor_price'], $row['price'] ) || (string) $item['anchor_date'] !== $row['date'];
+				if ( $is_clear ) {
+					// Clearing a verified anchor needs overwrite permission (shown as conflict).
+					if ( $verified ) {
+						return array( 'status' => 'conflict', 'label' => __( 'sukob (brisanje potvrđenog)', 'wp-cpt-sidrene-cijene' ), 'item_id' => (int) $item['id'] );
+					}
+					return array( 'status' => 'matched_id', 'label' => 'object_id', 'item_id' => (int) $item['id'] );
+				}
+				$differs = ! Money::eq( (string) $item['anchor_price'], $row['price'] ) || (string) $item['anchor_date'] !== $row['date'];
 				if ( $verified && $differs ) {
 					return array( 'status' => 'conflict', 'label' => __( 'sukob', 'wp-cpt-sidrene-cijene' ), 'item_id' => (int) $item['id'] );
 				}
@@ -631,7 +700,13 @@ final class Importer {
 			);
 			if ( $item ) {
 				$verified = ! empty( $item['anchor_verified'] ) && null !== $item['anchor_price'];
-				$differs  = ! Money::eq( (string) $item['anchor_price'], $row['price'] ) || (string) $item['anchor_date'] !== $row['date'];
+				if ( $is_clear ) {
+					if ( $verified ) {
+						return array( 'status' => 'conflict', 'label' => __( 'sukob (brisanje potvrđenog)', 'wp-cpt-sidrene-cijene' ), 'item_id' => (int) $item['id'] );
+					}
+					return array( 'status' => 'matched_code', 'label' => __( 'šifra', 'wp-cpt-sidrene-cijene' ), 'item_id' => $item_id );
+				}
+				$differs = ! Money::eq( (string) $item['anchor_price'], $row['price'] ) || (string) $item['anchor_date'] !== $row['date'];
 				if ( $verified && $differs ) {
 					return array( 'status' => 'conflict', 'label' => __( 'sukob', 'wp-cpt-sidrene-cijene' ), 'item_id' => (int) $item['id'] );
 				}

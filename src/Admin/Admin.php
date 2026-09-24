@@ -232,7 +232,13 @@ final class Admin {
 		self::guard();
 		$post_type = isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( $_POST['post_type'] ) ) : '';
 		if ( ! $post_type ) {
-			wp_send_json_error( array( 'message' => 'missing post_type' ) );
+			wp_send_json_error(
+				array(
+					'code'    => 'missing_post_type',
+					'message' => __( 'Nije odabrana vrsta sadržaja.', 'wp-cpt-sidrene-cijene' ),
+				),
+				400
+			);
 		}
 		$scanner = new \CPTSC\Discovery\Scanner();
 		$result  = $scanner->scan( $post_type );
@@ -286,7 +292,23 @@ final class Admin {
 		if ( ! \CPTSC\Frontend\Inspector::is_safe_selector( $selector ) || $post_id <= 0 ) {
 			wp_send_json_error( array( 'message' => __( 'Selector nije prihvaćen.', 'wp-cpt-sidrene-cijene' ) ) );
 		}
-		$ok = \CPTSC\Frontend\Inspector::selector_in_content( $selector, $post_id );
+		// Prefer rendered-page verification (builder templates / outside the_content);
+		// fall back to post_content (classic editor). Store the explicit strategy.
+		$in_content = \CPTSC\Frontend\Inspector::selector_in_content( $selector, $post_id );
+		$in_page    = false;
+		if ( ! $in_content ) {
+			$url  = get_permalink( $post_id );
+			$ssl  = (bool) apply_filters( 'cptsc_inspector_sslverify', true );
+			$resp = $url ? wp_remote_get( $url, array( 'timeout' => 15, 'sslverify' => $ssl ) ) : null;
+			if ( $resp && ! is_wp_error( $resp ) ) {
+				$html = (string) wp_remote_retrieve_body( $resp );
+				if ( $html ) {
+					$in_page = \CPTSC\Frontend\Inspector::selector_in_html( $selector, $html );
+				}
+			}
+		}
+		$ok       = $in_content || $in_page;
+		$strategy = $in_content ? 'content' : 'selector';
 		if ( $ok ) {
 			Settings::update(
 				array(
@@ -294,11 +316,12 @@ final class Admin {
 						'state'          => 'auto_verified',
 						'selector'       => $selector,
 						'sample_post_id' => $post_id,
+						'strategy'       => $strategy,
 					),
 				)
 			);
 		}
-		wp_send_json_success( array( 'verified' => (bool) $ok ) );
+		wp_send_json_success( array( 'verified' => (bool) $ok, 'strategy' => $ok ? $strategy : '' ) );
 	}
 
 	/**
@@ -308,7 +331,13 @@ final class Admin {
 		self::guard();
 		$rules = isset( $_POST['rules'] ) ? json_decode( wp_unslash( $_POST['rules'] ), true ) : null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 		if ( ! is_array( $rules ) ) {
-			wp_send_json_error( array( 'message' => 'bad rules' ) );
+			wp_send_json_error(
+				array(
+					'code'    => 'bad_rules',
+					'message' => __( 'Pravila sidrenih skupina nisu ispravna.', 'wp-cpt-sidrene-cijene' ),
+				),
+				400
+			);
 		}
 		\CPTSC\Anchor\Rules::delete_all();
 		foreach ( $rules as $rule ) {
@@ -342,7 +371,13 @@ final class Admin {
 		$job_id = isset( $_REQUEST['job_id'] ) ? (int) $_REQUEST['job_id'] : 0;
 		$job    = \CPTSC\Jobs\Manager::get( $job_id );
 		if ( ! $job ) {
-			wp_send_json_error( array( 'message' => 'not found' ) );
+			wp_send_json_error(
+				array(
+					'code'    => 'job_not_found',
+					'message' => __( 'Posao nije pronađen.', 'wp-cpt-sidrene-cijene' ),
+				),
+				404
+			);
 		}
 		wp_send_json_success( $job );
 	}

@@ -47,6 +47,8 @@ final class Settings {
 				'selector'      => '',
 				'insert'        => 'after',
 				'sample_post_id' => 0,
+				// Explicit strategy: content (the_thead) | selector (rendered DOM) — §18.
+				'strategy'      => 'content',
 			),
 			'feed'                   => array(
 				'enabled'        => false,

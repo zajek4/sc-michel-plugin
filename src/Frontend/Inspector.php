@@ -105,6 +105,30 @@ final class Inspector {
 	 * @param int    $post_id  Post.
 	 * @return bool
 	 */
+	/**
+	 * Does the selector appear in a full rendered HTML page?
+	 *
+	 * @param string $selector Selector.
+	 * @param string $html     Full page HTML.
+	 * @return bool
+	 */
+	public static function selector_in_html( $selector, $html ) {
+		if ( ! self::is_safe_selector( $selector ) || '' === (string) $html ) {
+			return false;
+		}
+		$dom = self::load_dom( $html );
+		if ( ! $dom ) {
+			return false;
+		}
+		try {
+			$xpath = new \DOMXPath( $dom );
+			$nodes = $xpath->query( self::css_to_xpath( $selector ) );
+			return ! empty( $nodes );
+		} catch ( \Throwable $e ) {
+			return false;
+		}
+	}
+
 	public static function selector_in_content( $selector, $post_id ) {
 		$content = self::rendered_content( $post_id );
 		if ( '' === $content ) {

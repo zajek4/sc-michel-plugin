@@ -274,6 +274,36 @@ final class Queue {
 	}
 
 	/**
+	 * Aggregate status counts for diagnostics (§33).
+	 * 'stuck' = processing rows past locked_until (UTC machine time).
+	 *
+	 * @return array {pending:int, processing:int, failed:int, stuck:int}
+	 */
+	public static function status_counts() {
+		global $wpdb;
+		$table = Database::instance()->table( 'queue' );
+		$utc   = gmdate( 'Y-m-d H:i:s', time() );
+		$row   = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT
+					SUM( status = 'pending' ) AS pending,
+					SUM( status = 'processing' ) AS processing,
+					SUM( status = 'failed' ) AS failed,
+					SUM( status = 'processing' AND locked_until IS NOT NULL AND locked_until < %s ) AS stuck
+				 FROM {$table}",
+				$utc
+			),
+			ARRAY_A
+		);
+		return array(
+			'pending'    => (int) ( $row['pending'] ?? 0 ),
+			'processing' => (int) ( $row['processing'] ?? 0 ),
+			'failed'     => (int) ( $row['failed'] ?? 0 ),
+			'stuck'      => (int) ( $row['stuck'] ?? 0 ),
+		);
+	}
+
+	/**
 	 * Failed count.
 	 *
 	 * @return int
@@ -305,6 +335,32 @@ final class Queue {
 	}
 
 	/**
+	 * Recover rows stuck in 'processing' past locked_until (crash/fatal safety).
+	 * Uses UTC machine time for lock comparisons (§7/§8).
+	 *
+	 * @return int Rows recovered.
+	 */
+	public static function recover_stale() {
+		global $wpdb;
+		$table  = Database::instance()->table( 'queue' );
+		$now    = current_time( 'mysql' );
+		$utc    = gmdate( 'Y-m-d H:i:s', time() );
+		return (int) $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$table}
+				 SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END,
+				     locked_until = NULL,
+				     last_error = CASE WHEN attempts >= 3 THEN %s ELSE last_error END,
+				     updated_at = %s
+				 WHERE status = 'processing' AND locked_until IS NOT NULL AND locked_until < %s",
+				'Prekinuto zbog pogreške obrade. Pokrenite ponovni pokušaj iz Dijagnostike.',
+				$now,
+				$utc
+			)
+		);
+	}
+
+	/**
 	 * Process one batch inside a time budget. Returns remaining pending count.
 	 *
 	 * @return int
@@ -322,14 +378,35 @@ final class Queue {
 		$batch     = (int) apply_filters( 'cptsc_batch_size', 50 );
 		$budget    = (int) apply_filters( 'cptsc_time_budget', 10 );
 		$deadline  = time() + max( 2, min( 25, $budget ) );
+		// Single machine-time standard for queue lock fields: UTC (gmdate).
+		// Display timestamps stay on current_time() via WP timezone for HR UI.
+		$now_utc   = gmdate( 'Y-m-d H:i:s', time() );
 		$now       = current_time( 'mysql' );
+
+		// Stale recovery: rows stuck in processing past their lock (crash/fatal).
+		// attempts capped at 3 → failed with Croatian failure message (§13).
+		$wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$table}
+				 SET status = CASE WHEN attempts >= 3 THEN 'failed' ELSE 'pending' END,
+				     locked_until = NULL,
+				     last_error = CASE WHEN attempts >= 3 THEN %s ELSE last_error END,
+				     updated_at = %s
+				 WHERE status = 'processing' AND locked_until IS NOT NULL AND locked_until < %s",
+				'Prekinuto zbog pogreške obrade. Pokrenite ponovni pokušaj iz Dijagnostike.',
+				$now,
+				$now_utc
+			)
+		);
 
 		$ids = $wpdb->get_col(
 			$wpdb->prepare(
 				"SELECT id FROM {$table}
-				 WHERE status = 'pending' AND (locked_until IS NULL OR locked_until < %s)
+				 WHERE (status = 'pending' OR (status = 'processing' AND (locked_until IS NULL OR locked_until < %s)))
+				   AND (locked_until IS NULL OR locked_until < %s)
 				 ORDER BY id ASC LIMIT %d",
-				$now,
+				$now_utc,
+				$now_utc,
 				$batch
 			)
 		);
@@ -378,6 +455,9 @@ final class Queue {
 					array(
 						'status'       => $attempts >= 3 ? 'failed' : 'pending',
 						'attempts'     => $attempts,
+						'last_error'   => $attempts >= 3
+							? 'Prekinuto zbog pogreške obrade. Pokrenite ponovni pokušaj iz Dijagnostike.'
+							: ( isset( $row['last_error'] ) ? $row['last_error'] : '' ),
 						'locked_until' => null,
 						'updated_at'   => current_time( 'mysql' ),
 					),

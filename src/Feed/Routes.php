@@ -267,7 +267,7 @@ final class Routes {
 		$table = \CPTSC\Database::instance()->table( 'items' );
 		$total = 0;
 		$rows  = array();
-		$where = "validation_level < 3 AND publication_state = 'publish' AND object_id = canonical_object_id";
+		$where = "validation_level < 2 AND publication_state = 'publish' AND object_id = canonical_object_id";
 		$args  = array();
 		if ( '' !== $search ) {
 			$like   = '%' . $wpdb->esc_like( $search ) . '%';

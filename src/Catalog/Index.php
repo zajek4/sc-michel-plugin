@@ -194,7 +194,8 @@ final class Index {
 	public static function feed_batch( $last_id, $limit, array $extra_where = array() ) {
 		global $wpdb;
 		$table  = Database::instance()->table( 'items' );
-		$where  = array( 'id > %d', 'validation_level < 3', 'publication_state = "publish"', 'object_id = canonical_object_id' );
+		// Feed never streams BLOCKED (2) or EXCLUDED (3) rows — only READY (0) + REVIEW (1).
+		$where  = array( 'id > %d', 'validation_level < 2', 'publication_state = "publish"', 'object_id = canonical_object_id' );
 		$params = array( (int) $last_id );
 		if ( ! empty( $extra_where[0] ) ) {
 			$where[] = $extra_where[0];

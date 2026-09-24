@@ -122,13 +122,35 @@ final class Validator {
 		}
 		fclose( $fh );
 
-		// Index health snapshot (critical rows must not be published).
-		$counts = \CPTSC\Catalog\Index::counts();
-		if ( $counts['blocked'] > 0 ) {
-			$errors[] = sprintf( 'Katalog sadrži %d blokiranih stavki.', $counts['blocked'] );
+		// Feed-scope preflight only: published+canonical items that are BLOCKED or
+		// missing a mandatory anchor cannot be silently omitted / blanked.
+		// Drafts/private/trash blocked items must NOT fail this feed (they are not in it).
+		global $wpdb;
+		$items_table = \CPTSC\Database::instance()->table( 'items' );
+		// phpcs:disable WordPress.DB.PreparedSQL.NotPrepared -- static table name.
+		$blocked_in_scope = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$items_table}
+			 WHERE validation_level = 2 AND publication_state = 'publish' AND object_id = canonical_object_id"
+		);
+		$missing_anchor_in_scope = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$items_table}
+			 WHERE ( anchor_price IS NULL OR anchor_date IS NULL )
+			   AND validation_level < 3 AND publication_state = 'publish' AND object_id = canonical_object_id"
+		);
+		// phpcs:enable
+		if ( $blocked_in_scope > 0 ) {
+			$errors[] = sprintf(
+				/* translators: %d: count of blocked published items */
+				_n( '%d objavljena stavka je blokirana i ne može ući u cjenik. Riješite stavke prije objave.', '%d objavljene stavke su blokirane i ne mogu ući u cjenik. Riješite stavke prije objave.', $blocked_in_scope, 'wp-cpt-sidrene-cijene' ),
+				$blocked_in_scope
+			);
 		}
-		if ( $counts['missing_anchor'] > 0 ) {
-			$warnings[] = sprintf( '%d stavki nema sidrenu cijenu.', $counts['missing_anchor'] );
+		if ( $missing_anchor_in_scope > 0 ) {
+			$errors[] = sprintf(
+				/* translators: %d: count */
+				_n( '%d objavljena stavka nema sidrenu cijenu — objava je zaustavljena.', '%d objavljene stavke nemaju sidrenu cijenu — objava je zaustavljena.', $missing_anchor_in_scope, 'wp-cpt-sidrene-cijene' ),
+				$missing_anchor_in_scope
+			);
 		}
 		if ( 0 === $rows ) {
 			$warnings[] = 'Cjenik nema nijedan redak.';

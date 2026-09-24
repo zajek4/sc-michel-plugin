@@ -20,6 +20,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class Archive {
 
 	/**
+	 * Optional hooks (orphan temp cleanup on heartbeat-safe admin paths).
+	 */
+	public function hooks() {
+		// Lightweight: clean abandoned temp files when diagnostics/feeds are viewed.
+		add_action( 'admin_init', array( __CLASS__, 'maybe_clean_temps' ) );
+	}
+
+	/**
 	 * Absolute storage directory for feeds.
 	 *
 	 * @return string
@@ -123,8 +131,12 @@ final class Archive {
 		global $wpdb;
 		$table    = Database::instance()->table( 'feed_versions' );
 		$retention = self::retention_days();
-		$cutoff    = gmdate( 'Y-m-d H:i:s', time() - $retention * DAY_IN_SECONDS );
-		$current   = self::current_filename(); // Never delete current.
+		// published_at is stored via current_time() (site-local) — cutoff must match that clock.
+		$cutoff    = gmdate( 'Y-m-d H:i:s', time() - $retention * DAY_IN_SECONDS + (int) ( get_option( 'gmt_offset', 0 ) * HOUR_IN_SECONDS ) );
+		$current_by_channel = array();
+		foreach ( Channel::all() as $ch ) {
+			$current_by_channel[ (int) $ch['id'] ] = self::current_filename( (int) $ch['id'] );
+		}
 
 		$rows = (array) $wpdb->get_results(
 			$wpdb->prepare(
@@ -136,19 +148,101 @@ final class Archive {
 
 		$removed = 0;
 		foreach ( $rows as $row ) {
-			if ( $row['filename'] === $current ) {
+			$ch_id = (int) $row['channel_id'];
+			// Never delete a channel's current file.
+			if ( isset( $current_by_channel[ $ch_id ] ) && $row['filename'] === $current_by_channel[ $ch_id ] ) {
 				continue;
 			}
-			foreach ( Channel::all() as $ch ) {
-				$path = trailingslashit( self::channel_dir( $ch['id'] ) ) . basename( $row['filename'] );
-				if ( is_readable( $path ) ) {
-					@unlink( $path ); // phpcs:ignore
-				}
+			$path = trailingslashit( self::channel_dir( $ch_id ) ) . basename( (string) $row['filename'] );
+			if ( is_readable( $path ) ) {
+				@unlink( $path ); // phpcs:ignore
 			}
 			$wpdb->delete( $table, array( 'id' => (int) $row['id'] ) );
 			$removed++;
 		}
+		self::maybe_clean_temps();
 		return $removed;
+	}
+
+	/**
+	 * Remove abandoned temporary feed files (strict pattern, age-gated, plugin dirs only).
+	 */
+	public static function maybe_clean_temps() {
+		$threshold = time() - HOUR_IN_SECONDS;
+		$dirs      = array( self::tmp_dir(), self::base_dir() );
+		foreach ( Channel::all() as $ch ) {
+			$dirs[] = self::channel_dir( (int) $ch['id'] );
+		}
+		foreach ( array_unique( $dirs ) as $dir ) {
+			if ( ! is_dir( $dir ) ) {
+				continue;
+			}
+			$real = realpath( $dir );
+			$base = realpath( self::base_dir() );
+			$tmp  = realpath( self::tmp_dir() );
+			$ok   = ( $real && ( ( $base && 0 === strpos( $real, $base ) ) || ( $tmp && 0 === strpos( $real, $tmp ) ) ) );
+			if ( ! $ok ) {
+				continue;
+			}
+			foreach ( (array) glob( $real . '/*' ) ?: array() as $file ) {
+				if ( ! is_file( $file ) ) {
+					continue;
+				}
+				$name = basename( $file );
+				// Only our known temp patterns: feed-*.csv.tmp, .stage-*.csv, *.csv.tmp, *.partial
+				$ours = (bool) preg_match( '/^(feed-\d+-[A-Za-z0-9]+\.csv\.tmp|\.stage-[A-Za-z0-9]+\.csv|[A-Za-z0-9._:-]+\.csv\.tmp|[A-Za-z0-9._:-]+\.partial)$/', $name );
+				if ( ! $ours ) {
+					continue;
+				}
+				$mtime = (int) filemtime( $file );
+				if ( $mtime && $mtime < $threshold ) {
+					@unlink( $file ); // phpcs:ignore
+				}
+			}
+		}
+	}
+
+	/**
+	 * Reconcile DB feed metadata with files on disk (diagnostics / after failures).
+	 *
+	 * @return array {missing_current: string[], fingerprint_mismatch: string[], orphan_tmp: int}
+	 */
+	public static function reconcile() {
+		global $wpdb;
+		$out    = array(
+			'missing_current'     => array(),
+			'fingerprint_mismatch' => array(),
+			'orphan_tmp'          => 0,
+		);
+		$table  = Database::instance()->table( 'feed_versions' );
+		foreach ( Channel::all( true ) as $ch ) {
+			$ch_id  = (int) $ch['id'];
+			$latest = self::latest_published( $ch_id );
+			if ( ! $latest ) {
+				continue;
+			}
+			$path = trailingslashit( self::channel_dir( $ch_id ) ) . self::current_filename( $ch_id );
+			if ( ! is_readable( $path ) ) {
+				$out['missing_current'][] = self::current_filename( $ch_id );
+				continue;
+			}
+			$fp = hash_file( 'sha256', $path );
+			if ( $fp && ! empty( $latest['fingerprint'] ) && ! hash_equals( (string) $latest['fingerprint'], (string) $fp ) ) {
+				$out['fingerprint_mismatch'][] = self::current_filename( $ch_id );
+			}
+		}
+		// Count orphan temps (without deleting here — cleanup is separate).
+		foreach ( array( self::tmp_dir(), self::base_dir() ) as $dir ) {
+			if ( ! is_dir( $dir ) ) {
+				continue;
+			}
+			foreach ( (array) glob( $dir . '/*.tmp' ) ?: array() as $f ) {
+				if ( is_file( $f ) && filemtime( $f ) < time() - HOUR_IN_SECONDS ) {
+					$out['orphan_tmp']++;
+				}
+			}
+		}
+		return $out;
 	}
 
 	/**

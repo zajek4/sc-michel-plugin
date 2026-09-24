@@ -9,9 +9,7 @@
 
 namespace CPTSC\Feed;
 
-use CPTSC\Anchor\Groups;
 use CPTSC\Database;
-use CPTSC\Jobs\Manager;
 use CPTSC\Money;
 use CPTSC\Settings;
 
@@ -105,7 +103,7 @@ final class Generator {
 		global $wpdb;
 		$table = Database::instance()->table( 'items' );
 		$total = (int) $wpdb->get_var(
-		 "SELECT COUNT(*) FROM {$table} WHERE validation_level < 3 AND publication_state = 'publish' AND object_id = canonical_object_id"
+		 "SELECT COUNT(*) FROM {$table} WHERE validation_level < 2 AND publication_state = 'publish' AND object_id = canonical_object_id"
 		);
 
 		if ( $progress && $job_id ) {
@@ -116,7 +114,7 @@ final class Generator {
 		while ( true ) {
 			$batch = $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT * FROM {$table} WHERE id > %d AND validation_level < 3 AND publication_state = 'publish' AND object_id = canonical_object_id ORDER BY id ASC LIMIT %d",
+					"SELECT * FROM {$table} WHERE id > %d AND validation_level < 2 AND publication_state = 'publish' AND object_id = canonical_object_id ORDER BY id ASC LIMIT %d",
 					$last_id,
 					$batch_size
 				),
@@ -155,13 +153,21 @@ final class Generator {
 			return new \WP_Error( 'cptsc_preflight', implode( ' ', $check['errors'] ) );
 		}
 
-		// 3) Fingerprint + duplicate detection.
-		$fingerprint = $check['fingerprint'];
-		$latest      = Archive::latest_published( $channel_id );
-		if ( ! $force && $latest && ! empty( $latest['fingerprint'] ) && $latest['fingerprint'] === $fingerprint && Settings::get( 'feed.skip_identical', true ) ) {
-			@unlink( $tmp ); // phpcs:ignore
-			return true; // Nothing changed — current file stays.
+		// 3) Fingerprint + recovery: skip ONLY if the public current file exists and
+		// its on-disk hash still matches the last published fingerprint.
+		$fingerprint  = $check['fingerprint'];
+		$latest       = Archive::latest_published( $channel_id );
+		$current_path = trailingslashit( Archive::channel_dir( $channel_id ) ) . Archive::current_filename( $channel_id );
+		$current_ok   = false;
+		if ( is_readable( $current_path ) ) {
+			$current_fp = hash_file( 'sha256', $current_path );
+			$current_ok = $current_fp && ! empty( $latest['fingerprint'] ) && hash_equals( (string) $latest['fingerprint'], (string) $current_fp );
 		}
+		if ( ! $force && $latest && ! empty( $latest['fingerprint'] ) && $latest['fingerprint'] === $fingerprint && $current_ok && Settings::get( 'feed.skip_identical', true ) ) {
+			@unlink( $tmp ); // phpcs:ignore
+			return true; // Nothing changed AND current file is intact on disk.
+		}
+		// If fingerprint matched but current is missing/corrupt → fall through and restore.
 
 		// 4) Archive filename per regulation: oblik_adresa_oznaka_broj_datum_i_vrijeme.csv
 		$sequence  = Channel::next_sequence( $channel_id );
@@ -174,22 +180,32 @@ final class Generator {
 			$archive_path = trailingslashit( Archive::channel_dir( $channel_id ) ) . $filename;
 		}
 
-		// 5) Copy to archive (this becomes the publicly published version record).
-		if ( ! @copy( $tmp, $archive_path ) ) { // phpcs:ignore
+		// 5) Stage archive in the SAME directory, then atomic rename → final name.
+		//    Never copy progressively into the public archive filename.
+		$arch_stage = $archive_path . '.tmp';
+		if ( ! @copy( $tmp, $arch_stage ) ) { // phpcs:ignore
 			@unlink( $tmp ); // phpcs:ignore
-			return new \WP_Error( 'cptsc_archive', 'Arhivska datoteka se ne može zapisati.' );
+			return new \WP_Error( 'cptsc_archive', 'Arhivska datoteka se ne može zapisati. Prethodna verzija ostaje dostupna.' );
+		}
+		if ( ! @rename( $arch_stage, $archive_path ) ) { // phpcs:ignore
+			@unlink( $arch_stage ); // phpcs:ignore
+			@unlink( $tmp ); // phpcs:ignore
+			return new \WP_Error( 'cptsc_archive', 'Arhivska datoteka se ne može objaviti. Prethodna verzija ostaje dostupna.' );
 		}
 
-		// 6) Atomic current publish: rename temp → aktualni file (same filesystem via uploads).
-		$current = trailingslashit( Archive::channel_dir( $channel_id ) ) . Archive::current_filename( $channel_id );
-		$renamed = @rename( $tmp, $current ); // phpcs:ignore
-		if ( ! $renamed ) {
-			// Fallback: copy + unlink (still only replaces when complete).
-			$renamed = @copy( $tmp, $current ); // phpcs:ignore
+		// 6) Atomic current publish: stage in the SAME directory as current, then rename.
+		//    NEVER copy() over the live file. If rename fails → FAIL, keep previous current.
+		$stage_current = trailingslashit( Archive::channel_dir( $channel_id ) ) . '.stage-' . wp_generate_password( 12, false, false ) . '.csv';
+		if ( ! @copy( $tmp, $stage_current ) ) { // phpcs:ignore
 			@unlink( $tmp ); // phpcs:ignore
-			if ( ! $renamed ) {
-				return new \WP_Error( 'cptsc_publish', 'Aktualni cjenik se ne može ažurirati. Prethodna verzija ostaje netaknuta.' );
-			}
+			// Archive file exists without DB record — reconcile will clean orphan.
+			return new \WP_Error( 'cptsc_publish', 'Aktualni cjenik se ne može pripremiti. Prethodna verzija ostaje netaknuta.' );
+		}
+		@unlink( $tmp ); // phpcs:ignore
+		$renamed = @rename( $stage_current, $current_path ); // phpcs:ignore
+		if ( ! $renamed ) {
+			@unlink( $stage_current ); // phpcs:ignore
+			return new \WP_Error( 'cptsc_publish', 'Aktualni cjenik se ne može ažurirati. Prethodna verzija ostaje netaknuta.' );
 		}
 
 		// 7) Record published version.

@@ -117,7 +117,15 @@ final class Validator {
 		$mask = Issues::encode( $keys );
 
 		$publication = $row['publication_state'] ?? 'publish';
-		$critical    = ( $mask & ( Issues::MISSING_NAME | Issues::MISSING_CURRENT_PRICE | Issues::SOURCE_VALUE_INVALID ) ) > 0;
+		// Legally mandatory for a published digital price list → always BLOCKED when missing.
+		// Optional/applicability fields (code, brand, barcode, unit, availability) stay REVIEW.
+		$critical_mask = Issues::MISSING_NAME
+			| Issues::MISSING_CURRENT_PRICE
+			| Issues::SOURCE_VALUE_INVALID
+			| Issues::MISSING_ANCHOR_PRICE
+			| Issues::SPECIAL_SALE_NAME_MISSING
+			| Issues::ANCHOR_GROUP_CONFLICT;
+		$critical = ( $mask & $critical_mask ) > 0;
 
 		if ( in_array( $publication, array( 'trash', 'excluded' ), true ) ) {
 			$level = self::EXCLUDED;

@@ -28,7 +28,9 @@ final class Cron {
 	 */
 	public function hooks() {
 		add_filter( 'cron_schedules', array( $this, 'schedules' ) );
-		add_action( 'cptsc_feed_publish', array( $this, 'maybe_publish_feed' ) );
+		add_action( 'cptsc_feed_publish', array( $this, 'maybe_publish_feed' ), 5 );
+		// Chain next single event AFTER attempt so the 07:00 series survives DST.
+		add_action( 'cptsc_feed_publish', array( $this, 'chain_next_feed_publish' ), 20 );
 		add_action( 'cptsc_feed_retry', array( $this, 'retry_publish_feed' ) );
 		add_action( 'init', array( $this, 'ensure_recurring' ) );
 		// Public server-cron endpoint (query var routed in Feed\Routes).
@@ -76,6 +78,16 @@ final class Cron {
 		if ( ! wp_next_scheduled( 'cptsc_feed_publish' ) ) {
 			self::schedule_feed_publish();
 		}
+		// Upgrade path: <=1.1.0 used recurring 'daily' — replace with single-event chain.
+		$feed_events = wp_get_scheduled_event( 'cptsc_feed_publish' );
+		if ( $feed_events && ! empty( $feed_events->schedule ) && 'daily' === $feed_events->schedule ) {
+			wp_unschedule_event( $feed_events->timestamp, 'cptsc_feed_publish' );
+			wp_clear_scheduled_hook( 'cptsc_feed_publish' );
+			self::schedule_feed_publish();
+		}
+		// Watchdog for both jobs AND queue (§12) on every heartbeat.
+		\CPTSC\Jobs\Manager::watchdog();
+		\CPTSC\Catalog\Queue::recover_stale();
 	}
 
 	/**
@@ -86,14 +98,25 @@ final class Cron {
 		if ( wp_next_scheduled( 'cptsc_feed_publish' ) ) {
 			return;
 		}
-		// Next 07:00 in the WordPress site timezone (Europe/Zagreb, DST-safe) — not PHP server TZ.
+		// DST-safe 07:00 chain: schedule ONE single event now; each fire schedules
+		// the next. Never use recurring 'daily' (fixed 24h drifts after DST change).
 		$tz   = function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
 		$now  = new \DateTimeImmutable( 'now', $tz );
 		$next = $now->setTime( 7, 0, 0 );
 		if ( $next->getTimestamp() <= $now->getTimestamp() ) {
 			$next = $next->modify( 'tomorrow' )->setTime( 7, 0, 0 );
 		}
-		wp_schedule_event( $next->getTimestamp(), 'daily', 'cptsc_feed_publish' );
+		wp_schedule_single_event( $next->getTimestamp(), 'cptsc_feed_publish' );
+	}
+
+	/**
+	 * After each feed-publish fire, chain the next 07:00 single event (DST-safe).
+	 * Hooked so the chain never relies on fixed 24h recurrence.
+	 */
+	public function chain_next_feed_publish() {
+		// Clear any foreign recurring registration of this hook (upgrade path from <=1.1.0).
+		wp_clear_scheduled_hook( 'cptsc_feed_publish' );
+		self::schedule_feed_publish();
 	}
 
 	/**
